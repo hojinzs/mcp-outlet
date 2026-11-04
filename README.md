@@ -72,7 +72,8 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 - `/auth/login?returnTo=/admin/…&prompt=login` → IdP(authorization code + PKCE S256) → `/auth/callback` → `returnTo`. `returnTo`는 `/admin/` 아래만 받는다.
 - 세션은 `sessions` 테이블에 SHA-256으로만 저장하고, 쿠키 `outlet_session`(HttpOnly, SameSite=Lax, `PUBLIC_BASE_URL`이 https면 Secure)에 무작위 토큰을 둔다. 수명은 `SESSION_TTL_HOURS`(기본 12시간)이고 로그인 시점부터 센다. 행을 지우면 바로 로그아웃된다.
 - 허용 그룹 밖이면 세션 없이 `/admin/forbidden?reason=not_member`로, 로그인 실패는 `/admin/login?error=access_denied|state_mismatch|idp_error`로 보낸다.
-- `POST /auth/logout`은 gateway 세션만 지우고 `{ redirectTo }`를 돌려준다. `?idp=true`("다른 계정으로 로그인")면 discovery의 `end_session_endpoint`에 `client_id`와 `post_logout_redirect_uri={PUBLIC_BASE_URL}/admin/login`을 붙인 주소를 준다. id_token은 저장하지 않으므로 `id_token_hint`는 보내지 않는다.
+- `POST /auth/logout`은 gateway 세션만 지우고 `{ redirectTo }`를 돌려준다. `?idp=true`("다른 계정으로 로그인")면 discovery의 `end_session_endpoint`에 `client_id`·`id_token_hint`·`post_logout_redirect_uri={PUBLIC_BASE_URL}/admin/login`을 붙인 주소를 준다. id_token은 DB가 아니라 `/auth/logout` 경로 전용 HttpOnly 쿠키 `outlet_id_token`에 둔다(허용 그룹 밖이라 세션이 없을 때도 쓰기 위해서다). 쿠키가 없으면 돌아올 주소 없이 IdP 로그아웃만 한다.
+- Authentik 프로바이더 설정: Redirect URI에 `{PUBLIC_BASE_URL}/admin/login`을 **logout** 유형(strict)으로 등록하고, Invalidation flow는 Authentik 세션까지 끝내는 `default-invalidation-flow`로 둔다. `default-provider-invalidation-flow`는 앱 세션만 끝내므로 같은 계정으로 다시 로그인된다.
 
 ## 배포
 
