@@ -56,6 +56,8 @@ describe('loadConfig', () => {
     expect(config.AUDIT_RETENTION_DAYS).toBe(90);
     expect(config.ACTIVITY_RETENTION_DAYS).toBe(365);
     expect(config.UPSTREAM_TIMEOUT_MS).toBe(30_000);
+    expect(config.MAX_CONNECTORS_PER_USER).toBe(20);
+    expect(config.MAX_ENDPOINTS_PER_USER).toBe(50);
     expect(config.TRUST_PROXY).toBe(false);
     expect(config.SESSION_TTL_HOURS).toBe(12);
     expect(loadConfig({ ...validEnv, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);

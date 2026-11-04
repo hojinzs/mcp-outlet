@@ -58,6 +58,10 @@ const configSchema = z
     UPSTREAM_ALLOW_CIDRS: csv.pipe(z.array(z.string().refine(isCidr, 'CIDR 형식(예: 10.0.0.0/8)'))),
     UPSTREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 
+    // 사용자당 개인 커넥터·엔드포인트 상한
+    MAX_CONNECTORS_PER_USER: z.coerce.number().int().positive().default(20),
+    MAX_ENDPOINTS_PER_USER: z.coerce.number().int().positive().default(50),
+
     // 0이면 지우지 않는다
     AUDIT_RETENTION_DAYS: z.coerce.number().int().min(0).default(90),
     ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(0).default(365),
