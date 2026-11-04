@@ -107,8 +107,16 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 | DELETE | `/api/endpoints/:id`              | `?deleteConnector=true`면 마지막 엔드포인트일 때 커넥터도 삭제                                      |
 | GET    | `/api/endpoints/:id/calls`        | 최근 호출 20건                                                                                      |
 | GET    | `/api/endpoints/:id/connect-info` | 엔드포인트 URL·client_id·secret 설정 여부                                                           |
+| GET    | `/api/connect-secret`             | 공유 Client Secret. 볼 때마다 `activity_logs`에 `client_secret.view`(값 없음). Public client면 404  |
 
 연결 테스트 실패는 `connection_test_result` 분류(`private_address`·`unreachable`·`auth_failed`·`not_mcp`·`timeout`·`redirect`)로만 준다. 저장 흐름에서 실패하면 422 `connection_test_failed`와 `error.details.result`, 툴 목록이 바뀌었으면 409 `tools_changed`, 상한(`MAX_CONNECTORS_PER_USER`·`MAX_ENDPOINTS_PER_USER`, 기본 20·50)을 넘으면 409 `limit_exceeded`다.
+
+### 관리 UI
+
+`apps/web`은 React Router·TanStack Query·Tailwind + shadcn/ui로 만든 SPA다. 빌드 결과(`apps/web/dist`)를 gateway가 `WEB_DIST_DIR`에서 읽어 `/admin`에 서빙하고, `/admin` 아래 화면 경로는 새로고침해도 `index.html`을 준다(없는 `/admin/assets/*`는 404). Docker 이미지는 web을 빌드해 넣는다.
+
+- 어떤 API든 401이면 지금 경로를 `returnTo`로 붙여 `/admin/login`으로, 403이면 `/admin/forbidden?reason=admin_only`로 보낸다(`src/api/query-client.ts`).
+- 화면은 `src/pages/`, 화면이 쓰는 규칙(툴 선택, 이름 제안, 연결 테스트 문구 등)은 `src/features/`에 두고 Vitest로 검사한다.
 
 ### 암호화 키 회전
 
