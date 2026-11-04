@@ -53,16 +53,19 @@ OAuth2/OIDC provider 하나를 로컬·개발·프로덕션과 Claude·ChatGPT�
 | Scopes       | openid, email, profile(groups 클레임 포함), offline_access          |
 | Access token | 30분, refresh token 30일                                            |
 
-Redirect URI는 아래를 등록한다. 개발 서버 도메인이 생기면 `{도메인}/auth/callback`을 추가한다.
+Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outlet Admins` 그룹만 바인딩해 그 밖의 사용자는 토큰을 받지 못하게 한다.
 
-| 용도                      | 모드   | URI                                                                                                             |
-| ------------------------- | ------ | --------------------------------------------------------------------------------------------------------------- |
-| Claude                    | strict | `https://claude.ai/api/mcp/auth_callback`                                                                       |
-| Claude                    | strict | `https://claude.com/api/mcp/auth_callback`                                                                      |
-| ChatGPT (커넥터마다 다름) | regex  | `^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]+$`                                                         |
-| ChatGPT (구 형식)         | strict | `https://chatgpt.com/connector_platform_oauth_redirect`                                                         |
-| Claude Code 등 loopback   | regex  | `^http://(localhost\|127\.0\.0\.1):[0-9]+/callback$`                                                            |
-| 관리 UI                   | strict | `http://localhost:3000/auth/callback`, `http://localhost:5173/auth/callback`, `{PUBLIC_BASE_URL}/auth/callback` |
+| 용도                      | 모드   | URI                                                                          |
+| ------------------------- | ------ | ---------------------------------------------------------------------------- |
+| Claude                    | strict | `https://claude.ai/api/mcp/auth_callback`                                    |
+| Claude                    | strict | `https://claude.com/api/mcp/auth_callback`                                   |
+| ChatGPT (커넥터마다 다름) | regex  | `^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]+$`                      |
+| ChatGPT (구 형식)         | strict | `https://chatgpt.com/connector_platform_oauth_redirect`                      |
+| Claude Code 등 loopback   | regex  | `^http://(localhost\|127\.0\.0\.1):[0-9]+/callback$`                         |
+| MCP Inspector             | regex  | `^http://(localhost\|127\.0\.0\.1):[0-9]+/oauth/callback(/debug)?$`          |
+| 관리 UI                   | strict | `http://localhost:3000/auth/callback`, `http://localhost:5173/auth/callback` |
+| 관리 UI (dev)             | strict | `https://mcp-outlet.dev0.daniworks.kr/auth/callback`                         |
+| 관리 UI (prod)            | strict | `https://mcp-outlet.daniworks.kr/auth/callback`                              |
 
 ## 배포
 

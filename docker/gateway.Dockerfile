@@ -24,4 +24,7 @@ COPY --from=web /app/apps/web/dist apps/web/dist
 ENV WEB_DIST_DIR=/app/apps/web/dist
 USER node
 EXPOSE 3000
+# slim 이미지에는 curl·wget이 없어 node로 확인한다 (Coolify 헬스체크는 끄고 이것을 쓴다)
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
+  CMD ["node", "-e", "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 CMD ["node", "apps/gateway/src/main.ts"]
