@@ -1,19 +1,27 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useId, useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { ApiError } from '../../api/client.ts';
-import { connectorQuery, queryKeys, requests } from '../../api/queries.ts';
+import { builtinsQuery, connectorQuery, queryKeys, requests } from '../../api/queries.ts';
 import type { Connector, RemoteConnectorPatch } from '../../api/types.ts';
 import { Loading } from '../../components/loading.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card, CardTitle } from '../../components/ui/card.tsx';
 import { Input } from '../../components/ui/input.tsx';
 import { Label } from '../../components/ui/label.tsx';
+import {
+  type ConnectOutcome,
+  connectErrorMessages,
+  connectOutcome,
+  connectorTestMessage,
+  withoutConnectOutcome,
+} from '../../features/connectors/builtin.ts';
 import { connectionTestMessage } from '../../features/connectors/remote-form.ts';
 import { formatDateTime } from '../../lib/format.ts';
+import { BuiltinSettings } from './builtin-settings.tsx';
 
-// SCR-EP-03 커넥터 설정. 주소·토큰을 바꾸면 gateway가 연결 테스트를 통과해야 저장한다
+// SCR-EP-03 커넥터 설정. 주소·토큰·서비스 계정 키를 바꾸면 gateway가 연결 테스트를 통과해야 저장한다
 
 type Draft = {
   url: string;
@@ -203,14 +211,21 @@ function RemoteForm({ connector, onSaved }: { connector: Connector; onSaved: () 
 }
 
 export function ConnectorSettings({
+  endpointId,
   connectorId,
   endpointCount,
 }: {
+  endpointId: string;
   connectorId: string;
   endpointCount: number;
 }) {
   const queryClient = useQueryClient();
   const connector = useQuery(connectorQuery(connectorId));
+  const builtins = useQuery({ ...builtinsQuery, enabled: connector.data?.runtime === 'builtin' });
+  const [params, setParams] = useSearchParams();
+  // 업스트림 동의에서 돌아온 결과. 처음 한 번만 읽고 쿼리에서 지운다
+  const [outcome] = useState<ConnectOutcome | null>(() => connectOutcome(params));
+  const outcomeHandled = useRef(false);
 
   // 커넥터가 바뀌면 이 커넥터를 쓰는 엔드포인트의 툴·상태도 바뀐다
   const refresh = () => {
@@ -222,10 +237,20 @@ export function ConnectorSettings({
     mutationFn: () => requests.retestConnector(connectorId),
     onSuccess: (result) => {
       if (result.result === 'ok') toast.success(`연결됐습니다. 툴 ${result.tools.length}개`);
+      else toast.error(connectorTestMessage(connector.data?.runtime ?? 'remote', result.result));
       refresh();
     },
     onError: (error) => toast.error(error.message),
   });
+
+  // 계정을 연결하고 돌아오면 연결 테스트를 바로 돌려 결과를 보여준다
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 처음 한 번만 처리한다
+  useEffect(() => {
+    if (outcome === null || outcomeHandled.current) return;
+    outcomeHandled.current = true;
+    setParams(withoutConnectOutcome(params), { replace: true });
+    if (outcome === 'connected') retest.mutate();
+  }, []);
 
   if (connector.isPending) return <Loading />;
   if (connector.isError) {
@@ -250,10 +275,16 @@ export function ConnectorSettings({
       {data.runtime === 'remote' ? (
         <RemoteForm key={data.updatedAt} connector={data} onSaved={refresh} />
       ) : (
-        // 내장 서비스의 계정 연결·다시 연결은 마일스톤 4에서 붙인다
-        <p className="text-sm">
-          서비스 <span className="font-medium">{data.name}</span>
-        </p>
+        <BuiltinSettings
+          key={data.updatedAt}
+          connector={data}
+          builtin={builtins.data?.find((builtin) => builtin.key === data.builtin)}
+          endpointId={endpointId}
+          connectNotice={
+            outcome === null || outcome === 'connected' ? null : connectErrorMessages[outcome]
+          }
+          onSaved={refresh}
+        />
       )}
       <div className="flex flex-wrap items-center gap-3 border-t pt-4 text-sm">
         <Button variant="outline" onClick={() => retest.mutate()} disabled={retest.isPending}>
@@ -265,7 +296,7 @@ export function ConnectorSettings({
             ? '없음'
             : lastResult === 'ok'
               ? `성공 · ${formatDateTime(data.lastTestedAt)}`
-              : `${connectionTestMessage(lastResult)} · ${formatDateTime(data.lastTestedAt)}`}
+              : `${connectorTestMessage(data.runtime, lastResult)} · ${formatDateTime(data.lastTestedAt)}`}
         </span>
         <Button variant="link" asChild className="ml-auto px-0">
           <Link to={`/endpoints/new?connector=${connectorId}`}>이 커넥터로 엔드포인트 하나 더</Link>

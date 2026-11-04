@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { endpointQuery } from '../../api/queries.ts';
+import { builtinsQuery, connectorQuery, endpointQuery } from '../../api/queries.ts';
 import type { EndpointDetail } from '../../api/types.ts';
 import { CopyButton } from '../../components/copy-button.tsx';
 import { LeaveGuard } from '../../components/leave-guard.tsx';
@@ -14,6 +14,7 @@ import { ToolSelector } from '../../components/tool-selector.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card, CardDescription, CardTitle } from '../../components/ui/card.tsx';
 import { Switch } from '../../components/ui/switch.tsx';
+import { builtinNameOf } from '../../features/connectors/builtin.ts';
 import { connectorKindLabel } from '../../features/endpoints/connector-kind.ts';
 import { newToolNames, savedSelection } from '../../features/endpoints/detail.ts';
 import { endpointStatusView } from '../../features/endpoints/status.ts';
@@ -135,6 +136,10 @@ function EnabledSwitch({ endpoint }: { endpoint: EndpointDetail }) {
 export function EndpointDetailPage() {
   const { id = '' } = useParams();
   const endpoint = useQuery(endpointQuery(id));
+  // 커넥터 설정과 같은 캐시를 쓴다. 내장 서비스면 종류 칸에 서비스 이름을 보여준다
+  const connectorId = endpoint.data?.connector.id;
+  const connector = useQuery({ ...connectorQuery(connectorId ?? ''), enabled: !!connectorId });
+  const builtins = useQuery({ ...builtinsQuery, enabled: !!connector.data?.builtin });
   const [draft, setDraft] = useState<Set<string> | null>(null);
   const [leaving, setLeaving] = useState(false);
 
@@ -184,7 +189,11 @@ export function EndpointDetailPage() {
           <dd>
             {data.connector.name}{' '}
             <span className="text-muted-foreground">
-              · {connectorKindLabel(data.connector.runtime)}
+              ·{' '}
+              {connectorKindLabel(
+                data.connector.runtime,
+                builtinNameOf(builtins.data, connector.data?.builtin ?? null),
+              )}
             </span>
           </dd>
           <dt className="text-muted-foreground">만든 날</dt>
@@ -193,6 +202,7 @@ export function EndpointDetailPage() {
       </Card>
 
       <ConnectorSettings
+        endpointId={data.id}
         connectorId={data.connector.id}
         endpointCount={data.connectorEndpointCount}
       />
