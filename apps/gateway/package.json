@@ -10,11 +10,13 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@fastify/cookie": "11.1.5",
     "@fastify/static": "10.1.8",
     "@mcp-outlet/builtin-connectors": "workspace:*",
     "@mcp-outlet/shared": "workspace:*",
     "drizzle-orm": "0.45.4",
     "fastify": "5.12.8",
+    "jose": "6.2.15",
     "postgres": "3.4.9",
     "zod": "4.6.7"
   },
