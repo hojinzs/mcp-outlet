@@ -10,7 +10,7 @@
 | 경로                          | 역할                                                                             |
 | ----------------------------- | -------------------------------------------------------------------------------- |
 | `apps/gateway`                | MCP 엔드포인트(`/c/{id}/mcp`), 관리 API, 관리 UI 서빙. DB와 암호화 키는 여기에만 |
-| `apps/runner`                 | stdio 커넥터 설치·실행. DB·암호화 키 접근 없음                                   |
+| `apps/runner`                 | (v2) stdio 커넥터 설치·실행. DB·암호화 키 접근 없음. v1 배포에는 포함하지 않는다 |
 | `apps/web`                    | 관리 UI (Vite + React). 빌드 결과를 gateway가 `/admin`에서 서빙                  |
 | `packages/shared`             | 커넥터 매니페스트 스키마, gateway↔runner 프로토콜 타입                           |
 | `packages/builtin-connectors` | builtin 커넥터 인터페이스와 구현                                                 |
@@ -26,17 +26,18 @@ Node 24.12 이상과 Docker가 필요하다.
 ```bash
 corepack enable
 pnpm install
-cp .env.example .env   # ENCRYPTION_KEY, RUNNER_TOKEN, OIDC 값 채우기
+cp .env.example .env   # ENCRYPTION_KEY, OIDC 값 채우기
 docker compose -f compose.yaml -f compose.dev.yaml up -d postgres
-pnpm dev               # gateway :3000, runner :4000, web :5173/admin/
+pnpm dev               # gateway :3000, web :5173/admin/
 ```
 
-| 명령                                            | 내용                                                 |
-| ----------------------------------------------- | ---------------------------------------------------- |
-| `pnpm typecheck`                                | 전체 타입 검사                                       |
-| `pnpm test`                                     | Vitest                                               |
-| `pnpm lint` / `pnpm format`                     | Biome                                                |
-| `pnpm --filter @mcp-outlet/gateway db:generate` | 스키마 변경 후 마이그레이션 생성 (기동 시 자동 적용) |
+| 명령                                            | 내용                                                              |
+| ----------------------------------------------- | ----------------------------------------------------------------- |
+| `pnpm typecheck`                                | 전체 타입 검사                                                    |
+| `pnpm test`                                     | Vitest                                                            |
+| `pnpm lint` / `pnpm format`                     | Biome                                                             |
+| `pnpm --filter @mcp-outlet/gateway db:generate` | 스키마 변경 후 마이그레이션 생성 (기동 시 자동 적용)              |
+| `pnpm dev:runner`                               | (v2) runner :4000. `.env`에 `RUNNER_URL`·`RUNNER_TOKEN`을 채운 뒤 |
 
 ## IdP 설정
 
@@ -65,6 +66,12 @@ Redirect URI는 아래를 등록한다. 개발 서버 도메인이 생기면 `{�
 
 ```bash
 docker compose up -d --build
+```
+
+v1은 gateway와 postgres만 띄운다. stdio 런타임(v2)을 켤 때는 runner를 겹쳐 띄운다(`.env`에 `RUNNER_TOKEN` 필요).
+
+```bash
+docker compose -f compose.yaml -f compose.stdio.yaml up -d --build
 ```
 
 TLS와 도메인은 외부 리버스 프록시가 맡는다. SSE가 끊기지 않도록 프록시 버퍼링을 꺼야 한다.

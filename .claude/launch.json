@@ -4,14 +4,7 @@
     {
       "name": "api",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "--parallel",
-        "--filter",
-        "@mcp-outlet/gateway",
-        "--filter",
-        "@mcp-outlet/runner",
-        "dev"
-      ],
+      "runtimeArgs": ["--filter", "@mcp-outlet/gateway", "dev"],
       "port": 3000
     },
     {

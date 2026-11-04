@@ -1,0 +1,24 @@
+# stdio 런타임(v2)용 덮어쓰기. v1 배포에는 쓰지 않는다.
+# docker compose -f compose.yaml -f compose.stdio.yaml up -d --build
+services:
+  gateway:
+    environment:
+      RUNNER_URL: http://runner:4000
+    depends_on:
+      runner:
+        condition: service_started
+
+  # DB 주소와 암호화 키를 넘기지 않도록 env_file 없이 필요한 값만 준다
+  runner:
+    build:
+      context: .
+      dockerfile: docker/runner.Dockerfile
+    environment:
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?.env에 RUNNER_TOKEN 필요}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - runner-data:/data
+    restart: unless-stopped
+
+volumes:
+  runner-data:

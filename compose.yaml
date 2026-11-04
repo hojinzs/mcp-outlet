@@ -22,14 +22,13 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-outlet}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-outlet}
-      RUNNER_URL: http://runner:4000
+      # v1은 runner 없이 동작한다. stdio(v2)는 compose.stdio.yaml을 겹쳐 켠다
+      RUNNER_URL: ""
     ports:
       - "${GATEWAY_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy
-      runner:
-        condition: service_started
     healthcheck:
       test:
         - CMD
@@ -39,18 +38,5 @@ services:
       interval: 10s
     restart: unless-stopped
 
-  # DB 주소와 암호화 키를 넘기지 않도록 env_file 없이 필요한 값만 준다
-  runner:
-    build:
-      context: .
-      dockerfile: docker/runner.Dockerfile
-    environment:
-      RUNNER_TOKEN: ${RUNNER_TOKEN:?.env에 RUNNER_TOKEN 필요}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    volumes:
-      - runner-data:/data
-    restart: unless-stopped
-
 volumes:
   postgres-data:
-  runner-data:

@@ -9,9 +9,9 @@ const validEnv = {
   OIDC_CLIENT_ID: 'outlet',
   OIDC_ADMIN_GROUPS: 'outlet-admins, ops',
   ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
-  RUNNER_URL: 'http://runner:4000',
-  RUNNER_TOKEN: 'x'.repeat(32),
 };
+
+const runner = { RUNNER_URL: 'http://runner:4000', RUNNER_TOKEN: 'x'.repeat(32) };
 
 describe('loadConfig', () => {
   it('기본값과 CSV 목록을 채운다', () => {
@@ -33,9 +33,21 @@ describe('loadConfig', () => {
     ).toThrow(/ENCRYPTION_KEY/);
   });
 
+  it('runner 설정 없이도 동작한다', () => {
+    const config = loadConfig({ ...validEnv, RUNNER_URL: '' });
+    expect(config.RUNNER_URL).toBeUndefined();
+    expect(loadConfig({ ...validEnv, ...runner }).RUNNER_URL).toBe(runner.RUNNER_URL);
+  });
+
+  it('RUNNER_URL만 있고 토큰이 없으면 거부한다', () => {
+    expect(() => loadConfig({ ...validEnv, RUNNER_URL: runner.RUNNER_URL })).toThrow(
+      /RUNNER_TOKEN/,
+    );
+  });
+
   it('오류 메시지에 값을 노출하지 않는다', () => {
     const secret = 'too-short-secret';
-    expect(() => loadConfig({ ...validEnv, RUNNER_TOKEN: secret })).toThrow(
+    expect(() => loadConfig({ ...validEnv, ...runner, RUNNER_TOKEN: secret })).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining(secret) }),
     );
   });
