@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router';
 import { AppLayout } from './layouts/app-layout.tsx';
+import { EndpointListPage } from './pages/endpoint-list-page.tsx';
 import { ForbiddenPage } from './pages/forbidden-page.tsx';
 import { LoginPage } from './pages/login-page.tsx';
 import { NotFoundPage } from './pages/not-found-page.tsx';
@@ -15,7 +16,10 @@ export const router = createBrowserRouter(
       children: [
         {
           errorElement: <RouteErrorPage />,
-          children: [{ path: '*', element: <NotFoundPage /> }],
+          children: [
+            { index: true, element: <EndpointListPage /> },
+            { path: '*', element: <NotFoundPage /> },
+          ],
         },
       ],
     },
