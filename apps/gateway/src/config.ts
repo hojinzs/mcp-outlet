@@ -51,6 +51,8 @@ const configSchema = z
     ENCRYPTION_KEY_PREVIOUS: aesKey.optional(),
     // 로그인 중 state·PKCE 쿠키 서명. 세션 자체는 DB에 둔다
     SESSION_SECRET: z.string().min(32),
+    // 관리 UI 세션 수명. 로그인 시점부터 세며 요청이 있어도 늘리지 않는다 (역할은 로그인마다 다시 정한다)
+    SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
 
     // 사설·loopback 주소 차단(F-CON-06)의 예외 대역. 이 대역에 한해 http도 허용한다. 운영에서는 비워 둔다
     UPSTREAM_ALLOW_CIDRS: csv.pipe(z.array(z.string().refine(isCidr, 'CIDR 형식(예: 10.0.0.0/8)'))),
