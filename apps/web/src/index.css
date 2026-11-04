@@ -49,5 +49,6 @@
   }
   body {
     @apply bg-muted/40 text-foreground antialiased;
+    word-break: keep-all;
   }
 }
