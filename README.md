@@ -67,6 +67,13 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 | 관리 UI (dev)             | strict | `https://mcp-outlet.dev0.daniworks.kr/auth/callback`                         |
 | 관리 UI (prod)            | strict | `https://mcp-outlet.daniworks.kr/auth/callback`                              |
 
+### 관리 UI 로그인
+
+- `/auth/login?returnTo=/admin/…&prompt=login` → IdP(authorization code + PKCE S256) → `/auth/callback` → `returnTo`. `returnTo`는 `/admin/` 아래만 받는다.
+- 세션은 `sessions` 테이블에 SHA-256으로만 저장하고, 쿠키 `outlet_session`(HttpOnly, SameSite=Lax, `PUBLIC_BASE_URL`이 https면 Secure)에 무작위 토큰을 둔다. 수명은 `SESSION_TTL_HOURS`(기본 12시간)이고 로그인 시점부터 센다. 행을 지우면 바로 로그아웃된다.
+- 허용 그룹 밖이면 세션 없이 `/admin/forbidden?reason=not_member`로, 로그인 실패는 `/admin/login?error=access_denied|state_mismatch|idp_error`로 보낸다.
+- `POST /auth/logout`은 gateway 세션만 지우고 `{ redirectTo }`를 돌려준다. `?idp=true`("다른 계정으로 로그인")면 discovery의 `end_session_endpoint`에 `client_id`와 `post_logout_redirect_uri={PUBLIC_BASE_URL}/admin/login`을 붙인 주소를 준다. id_token은 저장하지 않으므로 `id_token_hint`는 보내지 않는다.
+
 ## 배포
 
 ```bash
