@@ -3,7 +3,7 @@
 토큰 방식 MCP·로컬(stdio) MCP·외부 API를 OIDC 인증 뒤에 묶어, Claude·ChatGPT 커스텀 커넥터로
 붙일 수 있게 하는 셀프호스트 MCP 게이트웨이.
 
-요구사항: [MCP 커넥터 게이트웨이 요구사항 명세 v0.1](https://claude.ai/artifact/XjkYaiNqE2eQXvNBJfgLLS)
+요구사항: [docs/PRD.md](docs/PRD.md)
 
 ## 구성
 
