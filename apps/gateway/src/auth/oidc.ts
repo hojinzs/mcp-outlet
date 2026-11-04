@@ -48,7 +48,8 @@ export type AuthorizationRequest = {
 };
 
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 10_000;
+// Authentik 토큰 교환이 dev에서 10초를 넘긴 적이 있어 업스트림 기본 타임아웃과 맞춘다
+const REQUEST_TIMEOUT_MS = 30_000;
 const CLOCK_TOLERANCE_SECONDS = 30;
 
 export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
