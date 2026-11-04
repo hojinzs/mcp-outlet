@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 import { AppLayout } from './layouts/app-layout.tsx';
 import { EndpointListPage } from './pages/endpoint-list-page.tsx';
+import { EndpointNewPage } from './pages/endpoint-new/endpoint-new-page.tsx';
 import { ForbiddenPage } from './pages/forbidden-page.tsx';
 import { LoginPage } from './pages/login-page.tsx';
 import { NotFoundPage } from './pages/not-found-page.tsx';
@@ -18,6 +19,7 @@ export const router = createBrowserRouter(
           errorElement: <RouteErrorPage />,
           children: [
             { index: true, element: <EndpointListPage /> },
+            { path: 'endpoints/new', element: <EndpointNewPage /> },
             { path: '*', element: <NotFoundPage /> },
           ],
         },
