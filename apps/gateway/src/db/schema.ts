@@ -14,6 +14,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type { CachedTool } from '../runtimes/types.ts';
 
 // 명세의 도메인 모델 (User, Connector, Credential, Endpoint, AuditLog, ActivityLog)
 
@@ -91,7 +92,7 @@ export const connectors = pgTable(
     // 실행 정보·업스트림 인증·자격증명 스키마는 매니페스트 그대로 보관
     manifest: jsonb().$type<ConnectorManifest>().notNull(),
     visibleGroups: text().array().notNull().default(sql`'{}'::text[]`),
-    toolsCache: jsonb().$type<unknown[]>(),
+    toolsCache: jsonb().$type<CachedTool[]>(),
     toolsCachedAt: timestamp({ withTimezone: true }),
     status: connectorStatus().notNull().default('pending'),
     lastTestedAt: timestamp({ withTimezone: true }),

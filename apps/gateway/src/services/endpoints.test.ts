@@ -1,0 +1,386 @@
+import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createSecretBox } from '../crypto/secrets.ts';
+import { connectors, credentials, endpoints, users } from '../db/schema.ts';
+import { createRuntimes } from '../runtimes/index.ts';
+import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
+import {
+  FAKE_UPSTREAM_TOKEN,
+  type FakeUpstream,
+  startFakeUpstream,
+} from '../testing/fake-upstream.ts';
+import { createUpstreamFetch } from '../upstream/safe-fetch.ts';
+import {
+  deleteConnector,
+  getConnector,
+  type RemoteConnectorInput,
+  retestConnector,
+  updateRemoteConnector,
+} from './connectors.ts';
+import { loadCredentials } from './credentials.ts';
+import {
+  createEndpoint,
+  deleteEndpoint,
+  type EndpointServiceDeps,
+  getEndpoint,
+  listEndpointCalls,
+  listEndpoints,
+  updateEndpoint,
+} from './endpoints.ts';
+import { ServiceError } from './errors.ts';
+
+const KEY = Buffer.alloc(32, 7).toString('base64');
+
+describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', () => {
+  const db = useTestDb();
+  let upstream: FakeUpstream;
+
+  beforeAll(async () => {
+    upstream = await startFakeUpstream({ token: FAKE_UPSTREAM_TOKEN });
+  });
+  afterAll(() => upstream.close());
+
+  function deps(overrides: Partial<EndpointServiceDeps> = {}): EndpointServiceDeps {
+    const fetch = createUpstreamFetch({ allowCidrs: ['127.0.0.1/32'], timeoutMs: 3000 });
+    return {
+      db,
+      secrets: createSecretBox({ current: KEY }),
+      runtimes: createRuntimes({ fetch, timeoutMs: 3000 }),
+      maxConnectorsPerUser: 20,
+      maxEndpointsPerUser: 50,
+      publicBaseUrl: 'https://outlet.test',
+      now: () => new Date(),
+      ...overrides,
+    };
+  }
+
+  async function newUser() {
+    const [user] = await db
+      .insert(users)
+      .values({ sub: `sub-${randomUUID()}` })
+      .returning({ id: users.id });
+    if (!user) throw new Error('no user');
+    return user.id;
+  }
+
+  const remoteInput = (token = FAKE_UPSTREAM_TOKEN): RemoteConnectorInput => ({
+    name: 'Fake',
+    url: upstream.url,
+    auth: { type: 'static_token', token, header: 'Authorization', prefix: 'Bearer ' },
+  });
+
+  async function expectServiceError(promise: Promise<unknown>, code: ServiceError['code']) {
+    const error = await promise.then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ServiceError);
+    expect((error as ServiceError).code).toBe(code);
+    return error as ServiceError;
+  }
+
+  it('새 커넥터와 첫 엔드포인트를 한 번에 저장하고 토큰은 암호문으로만 남긴다', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'Read only',
+      allowedTools: ['read_item', 'read_item'],
+      connector: remoteInput(),
+    });
+    expect(created).toMatchObject({
+      name: 'Read only',
+      url: `https://outlet.test/c/${created.id}/mcp`,
+      status: 'active',
+      allowedTools: ['read_item'],
+      toolCounts: { allowed: 1, total: 3, new: 0 },
+      missingTools: [],
+      connector: { name: 'Fake', runtime: 'remote', url: upstream.url },
+    });
+    expect(created.tools.find((tool) => tool.name === 'read_item')).toMatchObject({
+      allowed: true,
+      isNew: false,
+      annotations: { readOnlyHint: true },
+    });
+
+    const [credential] = await db
+      .select()
+      .from(credentials)
+      .where(eq(credentials.connectorId, created.connector.id));
+    expect(credential?.ciphertext).not.toContain(FAKE_UPSTREAM_TOKEN);
+    const view = await getConnector(deps(), owner, created.connector.id);
+    expect(view).toMatchObject({
+      auth: { type: 'static_token', header: 'Authorization', prefix: 'Bearer ' },
+      credential: { configured: true },
+      status: 'ok',
+      lastTestResult: 'ok',
+      toolCount: 3,
+      endpointCount: 1,
+    });
+    expect(JSON.stringify(view)).not.toContain(FAKE_UPSTREAM_TOKEN);
+  });
+
+  it('연결 테스트에 실패하면 아무것도 저장하지 않는다', async () => {
+    const owner = await newUser();
+    const error = await expectServiceError(
+      createEndpoint(deps(), owner, {
+        name: 'x',
+        allowedTools: ['read_item'],
+        connector: remoteInput('wrong'),
+      }),
+      'connection_test_failed',
+    );
+    expect(error.details).toEqual({ result: 'auth_failed' });
+    expect(await db.select().from(connectors).where(eq(connectors.ownerId, owner))).toHaveLength(0);
+  });
+
+  it('커넥터에 없는 툴을 허용하려 하면 tools_changed', async () => {
+    const owner = await newUser();
+    await expectServiceError(
+      createEndpoint(deps(), owner, {
+        name: 'x',
+        allowedTools: ['gone'],
+        connector: remoteInput(),
+      }),
+      'tools_changed',
+    );
+  });
+
+  it('사용자당 커넥터·엔드포인트 상한을 넘기면 limit_exceeded', async () => {
+    const owner = await newUser();
+    const limited = deps({ maxConnectorsPerUser: 1, maxEndpointsPerUser: 2 });
+    const first = await createEndpoint(limited, owner, {
+      name: 'a',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    await expectServiceError(
+      createEndpoint(limited, owner, {
+        name: 'b',
+        allowedTools: ['read_item'],
+        connector: remoteInput(),
+      }),
+      'limit_exceeded',
+    );
+    await createEndpoint(limited, owner, {
+      name: 'b',
+      allowedTools: ['delete_item'],
+      connectorId: first.connector.id,
+    });
+    await expectServiceError(
+      createEndpoint(limited, owner, {
+        name: 'c',
+        allowedTools: ['read_item'],
+        connectorId: first.connector.id,
+      }),
+      'limit_exceeded',
+    );
+  });
+
+  it('다른 사용자의 엔드포인트·커넥터는 없는 것으로 다룬다', async () => {
+    const owner = await newUser();
+    const other = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'mine',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    await expectServiceError(getEndpoint(deps(), other, created.id), 'not_found');
+    await expectServiceError(
+      updateEndpoint(deps(), other, created.id, { enabled: false }),
+      'not_found',
+    );
+    await expectServiceError(
+      deleteEndpoint(deps(), other, created.id, { deleteConnector: true }),
+      'not_found',
+    );
+    await expectServiceError(listEndpointCalls(deps(), other, created.id), 'not_found');
+    await expectServiceError(getConnector(deps(), other, created.connector.id), 'not_found');
+    await expectServiceError(
+      createEndpoint(deps(), other, {
+        name: 'steal',
+        allowedTools: ['read_item'],
+        connectorId: created.connector.id,
+      }),
+      'not_found',
+    );
+    expect(await listEndpoints(deps(), other)).toEqual([]);
+  });
+
+  it('새 툴·사라진 툴을 구분하고, 허용목록 저장이나 확인함이 knownTools를 갱신한다', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'ep',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    // 커넥터 툴이 바뀐 상황: read_item이 사라지고 new_tool이 생김
+    await db
+      .update(connectors)
+      .set({ toolsCache: [{ name: 'delete_item' }, { name: 'slow_count' }, { name: 'new_tool' }] })
+      .where(eq(connectors.id, created.connector.id));
+
+    const before = await getEndpoint(deps(), owner, created.id);
+    expect(before.toolCounts).toEqual({ allowed: 0, total: 3, new: 1 });
+    expect(before.missingTools).toEqual(['read_item']);
+    expect(before.tools.find((tool) => tool.name === 'new_tool')?.isNew).toBe(true);
+
+    const acknowledged = await updateEndpoint(deps(), owner, created.id, {
+      acknowledgeNewTools: true,
+    });
+    expect(acknowledged.toolCounts.new).toBe(0);
+    expect(acknowledged.allowedTools).toEqual(['read_item']);
+
+    const saved = await updateEndpoint(deps(), owner, created.id, {
+      allowedTools: ['read_item', 'new_tool'],
+    });
+    expect(saved.allowedTools).toEqual(['read_item', 'new_tool']);
+    await expectServiceError(
+      updateEndpoint(deps(), owner, created.id, { allowedTools: ['unknown'] }),
+      'tools_changed',
+    );
+  });
+
+  it('상태는 사용 중지 > 커넥터 오류 > 비활성 > 활성 순으로 하나만 보인다', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'ep',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    const status = async () => (await getEndpoint(deps(), owner, created.id)).status;
+    await updateEndpoint(deps(), owner, created.id, { enabled: false });
+    expect(await status()).toBe('inactive');
+    await db
+      .update(connectors)
+      .set({ status: 'error' })
+      .where(eq(connectors.id, created.connector.id));
+    expect(await status()).toBe('connector_error');
+    await db
+      .update(connectors)
+      .set({ disabledAt: new Date(), disabledReason: 'abuse' })
+      .where(eq(connectors.id, created.connector.id));
+    expect(await status()).toBe('disabled');
+  });
+
+  it('마지막 엔드포인트를 지울 때만 커넥터도 함께 지운다', async () => {
+    const owner = await newUser();
+    const first = await createEndpoint(deps(), owner, {
+      name: 'a',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    const second = await createEndpoint(deps(), owner, {
+      name: 'b',
+      allowedTools: ['read_item'],
+      connectorId: first.connector.id,
+    });
+    expect(await deleteEndpoint(deps(), owner, first.id, { deleteConnector: true })).toEqual({
+      connectorDeleted: false,
+    });
+    expect(await deleteEndpoint(deps(), owner, second.id, { deleteConnector: true })).toEqual({
+      connectorDeleted: true,
+    });
+    expect(await db.select().from(connectors).where(eq(connectors.id, first.connector.id))).toEqual(
+      [],
+    );
+  });
+
+  it('커넥터를 지우면 엔드포인트도 함께 지워진다', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'a',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    await deleteConnector(deps(), owner, created.connector.id);
+    expect(await db.select().from(endpoints).where(eq(endpoints.id, created.id))).toEqual([]);
+  });
+
+  it('주소·토큰 교체는 연결 테스트를 통과해야 저장하고, 이름만 바꾸면 테스트하지 않는다', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'a',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    const id = created.connector.id;
+
+    await expectServiceError(
+      updateRemoteConnector(deps(), owner, id, {
+        auth: { type: 'static_token', token: 'wrong', header: 'Authorization', prefix: 'Bearer ' },
+      }),
+      'connection_test_failed',
+    );
+    const unchanged = await loadCredentials(deps(), id, owner);
+    expect(unchanged).toEqual({ TOKEN: FAKE_UPSTREAM_TOKEN });
+
+    // 토큰을 비우면 저장된 토큰으로 테스트한다
+    const kept = await updateRemoteConnector(deps(), owner, id, {
+      url: upstream.url,
+      auth: { type: 'static_token', header: 'Authorization', prefix: 'Bearer ' },
+    });
+    expect(kept.lastTestResult).toBe('ok');
+
+    // 업스트림이 꺼진 상태처럼 주소를 막아도 이름만 바꾸면 테스트하지 않는다
+    const blocked = deps({
+      runtimes: createRuntimes({
+        fetch: createUpstreamFetch({ allowCidrs: [], timeoutMs: 1000 }),
+        timeoutMs: 1000,
+      }),
+    });
+    const renamed = await updateRemoteConnector(blocked, owner, id, { name: 'Renamed' });
+    expect(renamed.name).toBe('Renamed');
+  });
+
+  it('재테스트는 상태와 툴 캐시를 갱신하고, 실패하면 커넥터 오류가 된다', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'a',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    const blocked = deps({
+      runtimes: createRuntimes({
+        fetch: createUpstreamFetch({ allowCidrs: [], timeoutMs: 1000 }),
+        timeoutMs: 1000,
+      }),
+    });
+    expect(await retestConnector(blocked, owner, created.connector.id)).toEqual({
+      result: 'private_address',
+    });
+    expect((await getEndpoint(deps(), owner, created.id)).status).toBe('connector_error');
+
+    const ok = await retestConnector(deps(), owner, created.connector.id);
+    expect(ok.result).toBe('ok');
+    expect(await getConnector(deps(), owner, created.connector.id)).toMatchObject({
+      status: 'ok',
+      lastTestResult: 'ok',
+      toolCount: 3,
+    });
+  });
+
+  it('이전 키로 만든 자격증명은 읽을 때 현재 키로 다시 암호화한다', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'a',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    const newKey = Buffer.alloc(32, 8).toString('base64');
+    const rotating = createSecretBox({ current: newKey, previous: KEY });
+    const select = () =>
+      db.select().from(credentials).where(eq(credentials.connectorId, created.connector.id));
+    const [before] = await select();
+    expect(await loadCredentials({ db, secrets: rotating }, created.connector.id, owner)).toEqual({
+      TOKEN: FAKE_UPSTREAM_TOKEN,
+    });
+    const [after] = await select();
+    expect(rotating.needsRotation(after?.ciphertext ?? '')).toBe(false);
+    expect(after?.updatedAt).toEqual(before?.updatedAt);
+    // 이전 키를 빼도 읽힌다
+    const rotated = createSecretBox({ current: newKey });
+    expect(await loadCredentials({ db, secrets: rotated }, created.connector.id, owner)).toEqual({
+      TOKEN: FAKE_UPSTREAM_TOKEN,
+    });
+  });
+});

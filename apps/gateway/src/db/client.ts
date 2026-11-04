@@ -13,6 +13,8 @@ export function createDb(url: string) {
 }
 
 export type Db = ReturnType<typeof createDb>['db'];
+// 쿼리 함수는 트랜잭션 안에서도 쓸 수 있게 둘 다 받는다
+export type DbOrTx = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
 
 export async function runMigrations(db: Db): Promise<void> {
   await migrate(db, { migrationsFolder });
