@@ -28,7 +28,7 @@ function draftOf(connector: Connector): Draft {
   const auth = connector.auth;
   return {
     url: connector.url ?? '',
-    authType: auth.type,
+    authType: auth.type === 'static_token' ? 'static_token' : 'none',
     header: auth.type === 'static_token' ? auth.header : 'Authorization',
     prefix: auth.type === 'static_token' ? auth.prefix : 'Bearer ',
     token: '',

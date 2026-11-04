@@ -1,6 +1,8 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from './client.ts';
 import type {
+  Builtin,
+  BuiltinConnectorPatch,
   ConnectInfo,
   ConnectionTestResponse,
   Connector,
@@ -9,8 +11,10 @@ import type {
   EndpointPatch,
   EndpointSummary,
   Me,
+  NewConnectorInput,
+  OAuthConnectorInput,
+  OAuthStartInput,
   RecentCall,
-  RemoteConnectorInput,
   RemoteConnectorPatch,
   Tool,
 } from './types.ts';
@@ -26,6 +30,7 @@ export const queryKeys = {
   connectors: ['connectors'] as const,
   connector: (id: string) => ['connectors', id] as const,
   connectorTools: (id: string) => ['connectors', id, 'tools'] as const,
+  builtins: ['builtins'] as const,
 };
 
 export const meQuery = queryOptions({
@@ -74,14 +79,29 @@ export const connectorToolsQuery = (id: string) =>
     queryFn: async () => (await api<{ tools: Tool[] }>(`/api/connectors/${id}/tools`)).tools,
   });
 
+// 설치에 들어 있는 내장 서비스는 실행 중에 바뀌지 않는다
+export const builtinsQuery = queryOptions({
+  queryKey: queryKeys.builtins,
+  queryFn: async () => (await api<{ builtins: Builtin[] }>('/api/builtins')).builtins,
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
 export const requests = {
   logout: (idp: boolean) =>
     api<{ redirectTo: string }>(`/auth/logout${idp ? '?idp=true' : ''}`, { method: 'POST' }),
-  testUnsavedConnector: (input: RemoteConnectorInput) =>
+  testUnsavedConnector: (input: NewConnectorInput) =>
     api<ConnectionTestResponse>('/api/connectors/test', { method: 'POST', body: input }),
+  createOAuthConnector: (input: OAuthConnectorInput) =>
+    api<Connector>('/api/connectors', { method: 'POST', body: input }),
+  // 응답이 state 쿠키를 심는다. 받은 주소로 바로 이동한다
+  startConnectorOAuth: (id: string, input: OAuthStartInput) =>
+    api<{ authorizationUrl: string }>(`/api/connectors/${id}/oauth/start`, {
+      method: 'POST',
+      body: input,
+    }),
   retestConnector: (id: string) =>
     api<ConnectionTestResponse>(`/api/connectors/${id}/test`, { method: 'POST' }),
-  updateConnector: (id: string, patch: RemoteConnectorPatch) =>
+  updateConnector: (id: string, patch: RemoteConnectorPatch | BuiltinConnectorPatch) =>
     api<Connector>(`/api/connectors/${id}`, { method: 'PATCH', body: patch }),
   createEndpoint: (input: CreateEndpointInput) =>
     api<EndpointDetail>('/api/endpoints', { method: 'POST', body: input }),

@@ -74,6 +74,9 @@ export const connectionTestMessages: Record<ConnectionTestFailure, string> = {
   not_mcp: '이 주소에서 MCP 응답을 받지 못했습니다. MCP 서버 주소가 맞는지 확인하세요',
   timeout: '커넥터 응답이 너무 늦습니다. 잠시 후 다시 시도하세요',
   redirect: '서버가 다른 주소로 보냈습니다. 최종 주소를 직접 넣으세요',
+  // 아래 둘은 내장 서비스에서만 나온다. 내장 문맥 문구는 builtin.ts
+  permission_denied: '계정에 권한이 없거나 API가 꺼져 있습니다. 권한과 API 사용 설정을 확인하세요',
+  upstream_error: '서비스가 오류를 돌려줬습니다. 잠시 후 다시 시도하세요',
 };
 
 export function connectionTestMessage(result: string): string {

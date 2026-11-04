@@ -27,7 +27,10 @@ export type ConnectionTestFailure =
   | 'auth_failed'
   | 'not_mcp'
   | 'timeout'
-  | 'redirect';
+  | 'redirect'
+  // 내장 서비스만: 계정에 속성·사이트 권한이 없거나 API가 꺼짐 / 업스트림 오류
+  | 'permission_denied'
+  | 'upstream_error';
 
 export type ConnectionTestResult = 'ok' | ConnectionTestFailure;
 
@@ -69,15 +72,20 @@ export type ConnectorStatus = 'pending' | 'ok' | 'error' | 'reauth_required';
 
 export type ConnectorAuthView =
   | { type: 'none' }
-  | { type: 'static_token'; header: string; prefix: string };
+  | { type: 'static_token'; header: string; prefix: string }
+  | { type: 'oauth2' }
+  | { type: 'service_account' };
 
 export type Connector = {
   id: string;
   name: string;
   runtime: ConnectorRuntime;
   url: string | null;
+  // 내장 서비스 key (GET /api/builtins). 원격이면 null
+  builtin: string | null;
   auth: ConnectorAuthView;
-  credential: { configured: boolean; updatedAt: string | null };
+  // account: 연결된 Google 계정 이메일이나 서비스 계정 client_email. 비밀값이 아니다
+  credential: { configured: boolean; updatedAt: string | null; account: string | null };
   status: ConnectorStatus;
   disabledAt: string | null;
   disabledReason: string | null;
@@ -117,6 +125,46 @@ export type RemoteConnectorPatch = {
     | { type: 'static_token'; token?: string; header: string; prefix: string };
 };
 
+// 내장 서비스 카드와 접속 방식. authMethods 순서가 화면 탭 순서다 (SCR-EP-02)
+export type BuiltinAuthMethod =
+  | { type: 'service_account' }
+  | { type: 'oauth2'; provider: string; redirectUri: string };
+
+export type Builtin = {
+  key: string;
+  name: string;
+  description: string;
+  toolCount: number;
+  authMethods: BuiltinAuthMethod[];
+};
+
+// key는 서비스 계정 JSON 키 원문. 저장 전 테스트나 엔드포인트와 함께 저장할 때만 보낸다
+export type ServiceAccountConnectorInput = {
+  builtin: string;
+  name: string;
+  auth: { type: 'service_account'; key: string };
+};
+
+export type NewConnectorInput = RemoteConnectorInput | ServiceAccountConnectorInput;
+
+export type OAuthClient = { clientId: string; clientSecret: string };
+
+// 계정 연결 전에 "연결 중"으로 먼저 저장한다 (SCR-EP-02 계정 연결 순서)
+export type OAuthConnectorInput = {
+  builtin: string;
+  name: string;
+  auth: { type: 'oauth2' } & OAuthClient;
+};
+
+// returnTo는 /admin/ 으로 시작하는 경로. client를 주면 동의 뒤 그 OAuth 앱으로 바꾼다
+export type OAuthStartInput = { returnTo?: string; client?: OAuthClient };
+
+// 내장 커넥터는 이름과 서비스 계정 키만 바꾼다. 키를 바꾸면 연결 테스트를 통과해야 저장된다
+export type BuiltinConnectorPatch = {
+  name?: string;
+  auth?: { type: 'service_account'; key: string };
+};
+
 export type EndpointPatch = {
   name?: string;
   allowedTools?: string[];
@@ -126,5 +174,5 @@ export type EndpointPatch = {
 
 export type CreateEndpointInput = { name: string; allowedTools: string[] } & (
   | { connectorId: string }
-  | { connector: RemoteConnectorInput }
+  | { connector: NewConnectorInput }
 );

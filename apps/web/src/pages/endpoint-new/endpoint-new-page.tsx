@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { ApiError, isApiError } from '../../api/client.ts';
 import {
+  builtinsQuery,
   connectorsQuery,
   connectorToolsQuery,
   endpointsQuery,
@@ -12,11 +13,15 @@ import {
   requests,
 } from '../../api/queries.ts';
 import type {
+  ConnectionTestResponse,
   Connector,
+  ConnectorRuntime,
   CreateEndpointInput,
-  RemoteConnectorInput,
+  NewConnectorInput,
+  OAuthClient,
   Tool,
 } from '../../api/types.ts';
+import { useOAuthStart } from '../../components/builtin/use-oauth-start.ts';
 import { LeaveGuard } from '../../components/leave-guard.tsx';
 import { Loading } from '../../components/loading.tsx';
 import { PageError } from '../../components/page-error.tsx';
@@ -24,26 +29,53 @@ import { ToolSelector } from '../../components/tool-selector.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card } from '../../components/ui/card.tsx';
 import {
-  connectionTestMessage,
+  builtinErrorText,
+  type ConnectOutcome,
+  connectErrorMessages,
+  connectOutcome,
+  connectorTestMessage,
+  newEndpointReturnTo,
+  oauthMethodOf,
+  withoutConnectOutcome,
+} from '../../features/connectors/builtin.ts';
+import {
+  type BuiltinFormState,
+  initialBuiltinForm,
+  toOAuthConnectorInput,
+  toServiceAccountInput,
+} from '../../features/connectors/builtin-form.ts';
+import {
   initialRemoteForm,
   type RemoteFormState,
   toRemoteInput,
 } from '../../features/connectors/remote-form.ts';
+import { serviceNamesByConnector } from '../../features/endpoints/connector-kind.ts';
 import { suggestEndpointName } from '../../features/endpoints/naming.ts';
 import { keepAvailable } from '../../features/tools/selection.ts';
 import { cn } from '../../lib/utils.ts';
-import { type ConnectorMode, ConnectorStep, type TestState } from './connector-step.tsx';
+import { BuiltinConnectorSection } from './builtin-connector-section.tsx';
+import { ConnectorResume } from './connector-resume.tsx';
+import {
+  type ConnectorMode,
+  ConnectorStep,
+  type NewConnectorKind,
+  type TestState,
+} from './connector-step.tsx';
 import { NameStep } from './name-step.tsx';
 
 // SCR-EP-02 엔드포인트 추가: 1 커넥터 → 2 툴 → 3 이름.
-// 원격 MCP 서버는 만들기를 누를 때 커넥터와 엔드포인트를 한 번에 저장한다. 중간에 떠나면 아무것도 남지 않는다
+// 원격 MCP 서버와 서비스 계정 내장 서비스는 만들기를 누를 때 커넥터와 엔드포인트를 한 번에 저장한다.
+// OAuth 내장 서비스는 계정 연결 전에 커넥터를 "연결 중"으로 먼저 저장하고, 돌아오면 연결 테스트부터 이어간다
 
 type Step = 1 | 2 | 3;
 
 // 1단계에서 고른 커넥터와 그 툴 목록
 type Prepared =
   | { kind: 'existing'; connector: Connector; tools: Tool[] }
-  | { kind: 'new'; input: RemoteConnectorInput; tools: Tool[] };
+  | { kind: 'new'; input: NewConnectorInput; tools: Tool[] };
+
+// 업스트림 동의에서 돌아왔거나 "연결 중" 커넥터로 들어온 경우 (?connector={id})
+type Resume = { connector: Connector; notice: string | null };
 
 const steps: { step: Step; label: string }[] = [
   { step: 1, label: '커넥터' },
@@ -84,34 +116,68 @@ function StepIndicator({ current, onGo }: { current: Step; onGo: (step: Step) =>
   );
 }
 
-const sameInput = (a: RemoteConnectorInput, b: RemoteConnectorInput) =>
+const sameInput = (a: NewConnectorInput, b: NewConnectorInput) =>
   JSON.stringify(a) === JSON.stringify(b);
+
+const runtimeOf = (input: NewConnectorInput): ConnectorRuntime =>
+  'builtin' in input ? 'builtin' : 'remote';
+
+function unsavedTestErrorText(error: Error, input: NewConnectorInput): string {
+  if (!isApiError(error, 400)) return error.message;
+  if ('builtin' in input) return builtinErrorText(error);
+  return '주소와 입력값을 확인하세요. https 주소만 등록할 수 있습니다';
+}
+
+function resumeTestState(
+  result: ConnectionTestResponse | undefined,
+  error: Error | null,
+): TestState {
+  if (error) return { status: 'failed', message: error.message };
+  if (!result) return { status: 'idle' };
+  return result.result === 'ok'
+    ? { status: 'ok', toolCount: result.tools.length }
+    : { status: 'failed', message: connectorTestMessage('builtin', result.result) };
+}
 
 export function EndpointNewPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const connectors = useQuery(connectorsQuery);
   const endpoints = useQuery(endpointsQuery);
+  const builtins = useQuery(builtinsQuery);
 
   const [step, setStep] = useState<Step>(1);
   const [mode, setMode] = useState<ConnectorMode | null>(null);
+  const [newKind, setNewKind] = useState<NewConnectorKind>('remote');
   const [form, setForm] = useState<RemoteFormState>(initialRemoteForm);
-  const [tested, setTested] = useState<{ input: RemoteConnectorInput; tools: Tool[] } | null>(null);
+  const [builtinForm, setBuiltinForm] = useState<BuiltinFormState>(initialBuiltinForm);
+  const [tested, setTested] = useState<{ input: NewConnectorInput; tools: Tool[] } | null>(null);
   const [testFailure, setTestFailure] = useState<string | null>(null);
   const [prepared, setPrepared] = useState<Prepared | null>(null);
+  const [resume, setResume] = useState<Resume | null>(null);
+  // "Google로 연결"로 먼저 저장한 커넥터. 동의로 가지 못했으면 다시 누를 때 새로 만들지 않고 이 커넥터를 쓴다
+  const [draftConnectorId, setDraftConnectorId] = useState<string | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
   // 처음에는 아무것도 선택하지 않는다. 쓰기 툴이 실수로 노출되지 않게 하기 위해서다
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [name, setName] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const oauth = useOAuthStart();
 
   const connectorList = connectors.data ?? [];
+  const serviceNames = serviceNamesByConnector(connectors.data, builtins.data);
   const currentMode: ConnectorMode = mode ?? (connectorList.length > 0 ? 'existing' : 'new');
-  const formInput = toRemoteInput(form);
+  // OAuth 탭은 저장 전 테스트가 없다
+  const formInput: NewConnectorInput | null =
+    newKind === 'remote'
+      ? toRemoteInput(form)
+      : builtinForm.method === 'service_account'
+        ? toServiceAccountInput(builtinForm)
+        : null;
   // 테스트 뒤에 입력을 바꾸면 다시 테스트해야 한다
-  const testValid = tested !== null && sameInput(tested.input, formInput);
+  const testValid = tested !== null && formInput !== null && sameInput(tested.input, formInput);
   const test: TestState = testValid
     ? { status: 'ok', toolCount: tested.tools.length }
     : testFailure
@@ -126,16 +192,53 @@ export function EndpointNewPage() {
     },
     onSuccess: (result, input) => {
       if (result.result === 'ok') setTested({ input, tools: result.tools });
-      else setTestFailure(connectionTestMessage(result.result));
+      else setTestFailure(connectorTestMessage(runtimeOf(input), result.result));
     },
-    onError: (error) => {
-      setTestFailure(
-        isApiError(error, 400)
-          ? '주소와 입력값을 확인하세요. https 주소만 등록할 수 있습니다'
-          : error.message,
-      );
-    },
+    onError: (error, input) => setTestFailure(unsavedTestErrorText(error, input)),
   });
+
+  // 돌아온 "연결 중" 커넥터는 저장된 설정으로 테스트한다. 성공하면 상태가 ok가 되고 툴 캐시가 생긴다
+  const resumeTest = useMutation({
+    mutationFn: requests.retestConnector,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.connectors }),
+  });
+
+  // 계정 연결 순서: 커넥터를 "연결 중"으로 먼저 저장하고 동의 화면으로 보낸다
+  const oauthCreate = useMutation({
+    mutationFn: async () => {
+      const input = toOAuthConnectorInput(builtinForm);
+      const client: OAuthClient = {
+        clientId: input.auth.clientId,
+        clientSecret: input.auth.clientSecret,
+      };
+      // 이미 저장한 커넥터는 지금 입력한 OAuth 앱으로 동의를 받는다
+      if (draftConnectorId) return { connectorId: draftConnectorId, client };
+      const connector = await requests.createOAuthConnector(input);
+      setDraftConnectorId(connector.id);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.connectors });
+      return { connectorId: connector.id, client: undefined };
+    },
+    onSuccess: ({ connectorId, client }) =>
+      oauth.start.mutate({
+        connectorId,
+        input: { returnTo: newEndpointReturnTo(connectorId), ...(client ? { client } : {}) },
+      }),
+  });
+
+  function changeNewKind(kind: NewConnectorKind) {
+    setNewKind(kind);
+    setTestFailure(null);
+  }
+
+  function changeBuiltinForm(next: BuiltinFormState) {
+    if (next.builtin !== builtinForm.builtin) {
+      setTestFailure(null);
+      setDraftConnectorId(null);
+      oauthCreate.reset();
+      oauth.start.reset();
+    }
+    setBuiltinForm(next);
+  }
 
   function goToTools(next: Prepared) {
     setPrepared(next);
@@ -159,14 +262,63 @@ export function EndpointNewPage() {
     }
   }
 
-  // 엔드포인트 상세의 "이 커넥터로 엔드포인트 하나 더" (?connector={id})
+  // ?connector={id}: 엔드포인트 상세의 "이 커넥터로 엔드포인트 하나 더"나 업스트림 동의 뒤 복귀.
+  // 복귀 결과(connected·connect_error)는 처음 한 번만 읽고 쿼리에서 지운다
   const presetId = params.get('connector');
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 목록을 받은 뒤 한 번만 고른다
+  const [outcome] = useState<ConnectOutcome | null>(() => connectOutcome(params));
+  const presetHandled = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 목록을 받은 뒤 한 번만 처리한다
   useEffect(() => {
-    if (!presetId || !connectors.data || prepared) return;
+    if (!presetId || !connectors.data || presetHandled.current) return;
+    presetHandled.current = true;
+    if (outcome !== null) setParams(withoutConnectOutcome(params), { replace: true });
     const connector = connectors.data.find((item) => item.id === presetId);
-    if (connector && connector.disabledAt === null) void pickExisting(connector);
+    if (!connector || connector.disabledAt !== null) return;
+    // 연결이 끝난 커넥터는 지금처럼 연결 테스트 없이 2단계로
+    if (connector.status !== 'pending' && outcome === null) {
+      void pickExisting(connector);
+      return;
+    }
+    setResume({
+      connector,
+      notice: outcome === null || outcome === 'connected' ? null : connectErrorMessages[outcome],
+    });
+    if (outcome === 'connected') resumeTest.mutate(connector.id);
   }, [presetId, connectors.data]);
+
+  function nextFromResume() {
+    if (!resume || resumeTest.data?.result !== 'ok') return;
+    if (prepared?.kind !== 'existing' || prepared.connector.id !== resume.connector.id) {
+      setSelected(new Set());
+    }
+    goToTools({ kind: 'existing', connector: resume.connector, tools: resumeTest.data.tools });
+  }
+
+  function reconnect(client?: OAuthClient) {
+    if (!resume) return;
+    const connectorId = resume.connector.id;
+    oauth.start.mutate({
+      connectorId,
+      input: {
+        returnTo: newEndpointReturnTo(connectorId),
+        ...(client
+          ? {
+              client: {
+                clientId: client.clientId.trim(),
+                clientSecret: client.clientSecret.trim(),
+              },
+            }
+          : {}),
+      },
+    });
+  }
+
+  function startOver() {
+    setResume(null);
+    resumeTest.reset();
+    oauth.start.reset();
+    setMode('new');
+  }
 
   function nextFromNewConnector() {
     if (!testValid) return;
@@ -196,7 +348,7 @@ export function EndpointNewPage() {
         ? await requests.retestConnector(current.connector.id)
         : await requests.testUnsavedConnector(current.input);
     if (result.result !== 'ok') {
-      setTestFailure(connectionTestMessage(result.result));
+      setTestFailure(connectorTestMessage(preparedRuntime(current), result.result));
       setStep(1);
       return;
     }
@@ -222,7 +374,9 @@ export function EndpointNewPage() {
         return;
       }
       if (error instanceof ApiError && error.code === 'connection_test_failed') {
-        setTestFailure(connectionTestMessage(String(error.details?.result ?? '')));
+        setTestFailure(
+          connectorTestMessage(preparedRuntime(prepared), String(error.details?.result ?? '')),
+        );
         setStep(1);
         return;
       }
@@ -246,16 +400,22 @@ export function EndpointNewPage() {
     return <PageError error={connectors.error} onRetry={() => connectors.refetch()} />;
   }
 
-  const dirty = step > 1 || JSON.stringify(form) !== JSON.stringify(initialRemoteForm);
+  const dirty =
+    step > 1 ||
+    JSON.stringify(form) !== JSON.stringify(initialRemoteForm) ||
+    JSON.stringify(builtinForm) !== JSON.stringify(initialBuiltinForm);
   const connectorName = prepared
     ? prepared.kind === 'existing'
       ? prepared.connector.name
       : prepared.input.name
     : '';
+  const connectError = oauthCreate.error ?? oauth.start.error;
+  const resumeBuiltin = builtins.data?.find((builtin) => builtin.key === resume?.connector.builtin);
 
   return (
     <div className="flex flex-col gap-6">
-      <LeaveGuard when={dirty && !done} message="만들던 내용이 사라집니다." />
+      {/* 업스트림 동의 화면으로 보낼 때는 막지 않는다 */}
+      <LeaveGuard when={dirty && !done && !oauth.redirecting} message="만들던 내용이 사라집니다." />
       <div className="flex flex-col gap-3">
         <Link to="/" className="text-sm text-muted-foreground hover:underline">
           ← 내 엔드포인트
@@ -264,16 +424,52 @@ export function EndpointNewPage() {
         <StepIndicator current={step} onGo={setStep} />
       </div>
 
-      {step === 1 && (
+      {step === 1 && resume && (
+        <ConnectorResume
+          connector={resume.connector}
+          serviceName={resumeBuiltin?.name ?? null}
+          oauthMethod={oauthMethodOf(resumeBuiltin)}
+          notice={resume.notice}
+          test={resumeTestState(resumeTest.data, resumeTest.error)}
+          testing={resumeTest.isPending}
+          onTest={() => resumeTest.mutate(resume.connector.id)}
+          onNext={nextFromResume}
+          onReconnect={reconnect}
+          reconnecting={oauth.start.isPending || oauth.redirecting}
+          reconnectError={oauth.start.error ? builtinErrorText(oauth.start.error) : null}
+          onStartOver={startOver}
+        />
+      )}
+
+      {step === 1 && !resume && (
         <ConnectorStep
           connectors={connectorList}
+          serviceNames={serviceNames}
           mode={currentMode}
           onModeChange={setMode}
+          newKind={newKind}
+          onNewKindChange={changeNewKind}
           form={form}
           onFormChange={setForm}
+          builtinPanel={
+            <BuiltinConnectorSection
+              builtins={builtins.data}
+              loadFailed={builtins.isError}
+              onRetry={() => builtins.refetch()}
+              form={builtinForm}
+              onFormChange={changeBuiltinForm}
+              test={test}
+              testing={runTest.isPending}
+              onTest={() => formInput && runTest.mutate(formInput)}
+              onNext={nextFromNewConnector}
+              onConnect={() => oauthCreate.mutate()}
+              connecting={oauthCreate.isPending || oauth.start.isPending || oauth.redirecting}
+              connectError={connectError ? builtinErrorText(connectError) : null}
+            />
+          }
           test={test}
           testing={runTest.isPending}
-          onTest={() => runTest.mutate(formInput)}
+          onTest={() => formInput && runTest.mutate(formInput)}
           onNext={nextFromNewConnector}
           picking={picking}
           onPick={pickExisting}
@@ -313,4 +509,8 @@ export function EndpointNewPage() {
       )}
     </div>
   );
+}
+
+function preparedRuntime(prepared: Prepared): ConnectorRuntime {
+  return prepared.kind === 'existing' ? prepared.connector.runtime : runtimeOf(prepared.input);
 }
