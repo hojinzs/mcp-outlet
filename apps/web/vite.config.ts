@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -8,7 +9,7 @@ const gateway = 'http://localhost:3000';
 // 로그인 콜백·MCP 엔드포인트·보호 리소스 메타데이터를 한 출처로 맞춘다
 export default defineConfig({
   base: '/admin/',
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {
