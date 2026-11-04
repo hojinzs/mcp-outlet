@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router';
 import { AppLayout } from './layouts/app-layout.tsx';
+import { EndpointConnectPage } from './pages/endpoint-connect-page.tsx';
 import { EndpointListPage } from './pages/endpoint-list-page.tsx';
 import { EndpointNewPage } from './pages/endpoint-new/endpoint-new-page.tsx';
 import { ForbiddenPage } from './pages/forbidden-page.tsx';
@@ -20,6 +21,7 @@ export const router = createBrowserRouter(
           children: [
             { index: true, element: <EndpointListPage /> },
             { path: 'endpoints/new', element: <EndpointNewPage /> },
+            { path: 'endpoints/:id/connect', element: <EndpointConnectPage /> },
             { path: '*', element: <NotFoundPage /> },
           ],
         },
