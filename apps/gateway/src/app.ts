@@ -10,6 +10,7 @@ import type { Db } from './db/client.ts';
 import { createAuthGuards } from './http/auth-guard.ts';
 import { registerErrorHandlers, sendError } from './http/errors.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
+import { registerConnectSecret } from './routes/connect-secret.ts';
 import { registerConnectorRoutes } from './routes/connectors.ts';
 import { registerEndpointRoutes } from './routes/endpoints.ts';
 import { registerHealth } from './routes/health.ts';
@@ -70,6 +71,7 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
       api.addHook('preHandler', guards.requireSession);
       registerMe(api);
       registerConnectorRoutes(api, { services, allowHttp });
+      registerConnectSecret(api, { db, clientSecret: config.OIDC_CLIENT_SECRET });
       registerEndpointRoutes(api, {
         services,
         allowHttp,
