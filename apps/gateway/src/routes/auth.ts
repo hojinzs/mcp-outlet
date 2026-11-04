@@ -10,6 +10,8 @@ import { type OidcClient, OidcError } from '../auth/oidc.ts';
 import type { Config } from '../config.ts';
 import type { Db } from '../db/client.ts';
 import {
+  ID_TOKEN_COOKIE,
+  idTokenCookieOptions,
   LOGIN_STATE_COOKIE,
   loginStateCookieOptions,
   SESSION_COOKIE,
@@ -87,9 +89,10 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
       code && state ? readLoginState(cookie, config.SESSION_SECRET, state, now()) : null;
     if (!code || !loginState) return failLogin(reply, 'state_mismatch');
 
+    let idToken: string;
     let claims: Awaited<ReturnType<OidcClient['verifyIdToken']>>;
     try {
-      const idToken = await oidc.exchangeCode({
+      idToken = await oidc.exchangeCode({
         code,
         codeVerifier: loginState.codeVerifier,
         redirectUri,
@@ -116,6 +119,8 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
         now: now(),
       },
     );
+    // IdP 로그아웃의 id_token_hint로만 쓴다. 접근 거부(세션 없음)에서도 "다른 계정으로 로그인"에 필요하다
+    reply.setCookie(ID_TOKEN_COOKIE, idToken, idTokenCookieOptions(config));
     if (result.kind === 'denied') {
       // 세션 없이 접근 거부 화면으로. 이메일은 문구에만 쓴다 (SCR-COM-03 not_member)
       const params = new URLSearchParams({ reason: 'not_member' });
@@ -132,12 +137,15 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
     const query = logoutQuery.parse(request.query);
     const token = request.cookies[SESSION_COOKIE];
     if (token) await endSession(db, token);
+    const idTokenHint = request.cookies[ID_TOKEN_COOKIE];
     reply.clearCookie(SESSION_COOKIE, sessionCookieOptions(config));
+    reply.clearCookie(ID_TOKEN_COOKIE, idTokenCookieOptions(config));
 
     if (!query.idp) return { redirectTo: loginPage };
     const postLogoutRedirectUri = new URL(loginPage, config.PUBLIC_BASE_URL).toString();
     try {
-      return { redirectTo: (await oidc.endSessionUrl(postLogoutRedirectUri)) ?? loginPage };
+      const url = await oidc.endSessionUrl({ postLogoutRedirectUri, idTokenHint });
+      return { redirectTo: url ?? loginPage };
     } catch (error) {
       if (!(error instanceof OidcError)) throw error;
       request.log.warn({ oidcError: error.kind }, 'idp logout url failed');

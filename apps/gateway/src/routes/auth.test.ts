@@ -216,14 +216,27 @@ describe.skipIf(!testDatabaseUrl)('관리 UI 로그인 (DB)', () => {
     expect(me.statusCode).toBe(401);
   });
 
-  it('idp=true면 end_session 주소를, IdP가 지원하지 않으면 로그인 화면을 준다', async () => {
+  it('idp=true면 id_token_hint를 붙인 end_session 주소를, IdP가 지원하지 않으면 로그인 화면을 준다', async () => {
     const s = await setup();
-    const out = await s.app.inject({ method: 'POST', url: '/auth/logout?idp=true' });
+    const callback = await login(s, member());
+    const idTokenCookie = callback.cookies.find((c) => c.name === 'outlet_id_token');
+    expect(idTokenCookie).toMatchObject({ httpOnly: true, secure: true, path: '/auth/logout' });
+    const out = await s.app.inject({
+      method: 'POST',
+      url: '/auth/logout?idp=true',
+      cookies: { outlet_id_token: idTokenCookie?.value ?? '' },
+    });
     const url = new URL(out.json().redirectTo);
     expect(`${url.origin}${url.pathname}`).toBe(`${FAKE_ISSUER}/end-session`);
+    expect(url.searchParams.get('id_token_hint')).toBe(idTokenCookie?.value);
     expect(url.searchParams.get('post_logout_redirect_uri')).toBe(
       'https://outlet.test/admin/login',
     );
+    expect(out.cookies.find((c) => c.name === 'outlet_id_token')?.value).toBe('');
+
+    // 허용 그룹 밖이라 세션이 없어도 "다른 계정으로 로그인"에 hint를 쓸 수 있다
+    const denied = await login(s, { ...member(), groups: [] });
+    expect(denied.cookies.find((c) => c.name === 'outlet_id_token')?.value).toBeTruthy();
 
     const bare = await setup({ endSession: false });
     const res = await bare.app.inject({ method: 'POST', url: '/auth/logout?idp=true' });

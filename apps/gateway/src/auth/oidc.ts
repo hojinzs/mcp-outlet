@@ -144,13 +144,21 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
     }
   }
 
-  // RP-initiated logout. IdP가 지원하지 않으면 null (SCR-COM-03 결정 사항)
-  async function endSessionUrl(postLogoutRedirectUri: string): Promise<string | null> {
+  // RP-initiated logout. IdP가 지원하지 않으면 null (SCR-COM-03 결정 사항).
+  // post_logout_redirect_uri는 id_token_hint가 있을 때만 붙인다. 등록된 로그아웃 URI가 있는 IdP는
+  // hint 없는 post_logout_redirect_uri를 거부한다(OIDC RP-Initiated Logout 1.0)
+  async function endSessionUrl(input: {
+    postLogoutRedirectUri: string;
+    idTokenHint?: string | undefined;
+  }): Promise<string | null> {
     const { metadata } = await load();
     if (!metadata.end_session_endpoint) return null;
     const url = new URL(metadata.end_session_endpoint);
     url.searchParams.set('client_id', settings.clientId);
-    url.searchParams.set('post_logout_redirect_uri', postLogoutRedirectUri);
+    if (input.idTokenHint) {
+      url.searchParams.set('id_token_hint', input.idTokenHint);
+      url.searchParams.set('post_logout_redirect_uri', input.postLogoutRedirectUri);
+    }
     return url.toString();
   }
 

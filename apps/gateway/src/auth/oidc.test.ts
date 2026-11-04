@@ -14,6 +14,7 @@ const settings = {
   clientId: FAKE_CLIENT_ID,
   clientSecret: FAKE_CLIENT_SECRET,
 };
+const logout = { postLogoutRedirectUri: 'https://o/admin/login' };
 const request = { redirectUri: 'https://o/cb', state: 's', nonce: 'n', codeChallenge: 'c' };
 
 describe('OIDC client', () => {
@@ -83,20 +84,27 @@ describe('OIDC client', () => {
       fetch: async () => new Response('down', { status: 503 }),
       now,
     });
-    await expect(client.endSessionUrl('https://o/admin/login')).rejects.toMatchObject({
-      kind: 'discovery',
-    });
+    await expect(client.endSessionUrl(logout)).rejects.toMatchObject({ kind: 'discovery' });
   });
 
-  it('RP-initiated logout 주소를 만들고, 없으면 null', async () => {
+  it('RP-initiated logout: hint가 있을 때만 돌아올 주소를 붙인다', async () => {
     const idp = await createFakeIdp({ now });
     const client = createOidcClient(settings, { fetch: idp.fetch, now });
-    const url = new URL((await client.endSessionUrl('https://o/admin/login')) ?? '');
-    expect(url.searchParams.get('post_logout_redirect_uri')).toBe('https://o/admin/login');
-    expect(url.searchParams.get('client_id')).toBe(FAKE_CLIENT_ID);
+    const withHint = new URL(
+      (await client.endSessionUrl({ ...logout, idTokenHint: 'id.token.hint' })) ?? '',
+    );
+    expect(Object.fromEntries(withHint.searchParams)).toEqual({
+      client_id: FAKE_CLIENT_ID,
+      id_token_hint: 'id.token.hint',
+      post_logout_redirect_uri: 'https://o/admin/login',
+    });
+    const bareUrl = new URL((await client.endSessionUrl(logout)) ?? '');
+    expect(Object.fromEntries(bareUrl.searchParams)).toEqual({ client_id: FAKE_CLIENT_ID });
+  });
 
+  it('end_session_endpoint가 없으면 null', async () => {
     const bare = await createFakeIdp({ now, endSession: false });
     const bareClient = createOidcClient(settings, { fetch: bare.fetch, now });
-    expect(await bareClient.endSessionUrl('https://o/admin/login')).toBeNull();
+    expect(await bareClient.endSessionUrl(logout)).toBeNull();
   });
 });
