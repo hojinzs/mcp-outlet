@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDownIcon, MenuIcon, XIcon } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { toast } from 'sonner';
 import { meQuery } from '../api/queries.ts';
@@ -81,7 +81,8 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function AppLayout() {
+// children이 있으면 Outlet 대신 그린다 (레이아웃 안에 보여주는 접근 거부 admin_only)
+export function AppLayout({ children }: { children?: ReactNode }) {
   const me = useQuery(meQuery);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -107,7 +108,7 @@ export function AppLayout() {
         {/* 사용자 정보를 받기 전에는 메뉴 자리를 비워 둔다 */}
         <aside
           className={cn(
-            'w-56 shrink-0 border-r bg-background p-3 md:block md:min-h-[calc(100dvh-3.5rem)] md:bg-transparent',
+            'w-56 shrink-0 border-r bg-background p-3 md:static md:block md:min-h-[calc(100dvh-3.5rem)] md:w-56 md:border-b-0 md:bg-transparent',
             menuOpen ? 'fixed inset-x-0 top-14 z-30 block w-full border-b' : 'hidden',
           )}
         >
@@ -119,7 +120,7 @@ export function AppLayout() {
           ) : me.isError ? (
             <PageError error={me.error} onRetry={() => me.refetch()} retrying={me.isFetching} />
           ) : (
-            <Outlet />
+            (children ?? <Outlet />)
           )}
         </main>
       </div>
