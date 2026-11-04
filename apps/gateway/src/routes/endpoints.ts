@@ -11,7 +11,7 @@ import {
   listEndpoints,
   updateEndpoint,
 } from '../services/endpoints.ts';
-import { displayName, parseId, remoteConnectorInput, toolNameList } from './inputs.ts';
+import { displayName, newConnectorInput, parseId, toolNameList } from './inputs.ts';
 
 // 내 엔드포인트 API (SCR-EP-01~04). requireSession이 걸린 /api 범위에 등록한다
 
@@ -32,13 +32,13 @@ const deleteQuery = z.object({ deleteConnector: z.stringbool().default(false) })
 
 export function registerEndpointRoutes(api: FastifyInstance, deps: EndpointRouteDeps): void {
   const { services } = deps;
-  // 기존 커넥터(connectorId)나 새 원격 커넥터 설정(connector) 중 하나
+  // 기존 커넥터(connectorId)나 새 커넥터 설정(connector: 원격·서비스 계정 내장) 중 하나
   const createSchema = z.union([
     z.object({ name: displayName, allowedTools: toolNameList, connectorId: z.uuid() }),
     z.object({
       name: displayName,
       allowedTools: toolNameList,
-      connector: remoteConnectorInput(deps.allowHttp),
+      connector: newConnectorInput(deps.allowHttp),
     }),
   ]);
 

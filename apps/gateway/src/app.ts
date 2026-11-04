@@ -11,12 +11,14 @@ import type { Db } from './db/client.ts';
 import { createAuthGuards } from './http/auth-guard.ts';
 import { registerErrorHandlers, sendError } from './http/errors.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
+import { registerBuiltinRoutes } from './routes/builtins.ts';
 import { registerConnectSecret } from './routes/connect-secret.ts';
 import { registerConnectorRoutes } from './routes/connectors.ts';
 import { registerEndpointRoutes } from './routes/endpoints.ts';
 import { registerHealth } from './routes/health.ts';
 import { registerMcpRoutes } from './routes/mcp.ts';
 import { registerMe } from './routes/me.ts';
+import { registerUpstreamAuthRoutes } from './routes/upstream-auth.ts';
 import { createRuntimes } from './runtimes/index.ts';
 import type { Builtins } from './services/builtin-auth.ts';
 import type { EndpointServiceDeps } from './services/endpoints.ts';
@@ -78,11 +80,16 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
 
   registerHealth(app, db);
   registerAuthRoutes(app, { config, db, oidc, now: deps.now });
+  registerUpstreamAuthRoutes(app, { config, db, services });
   await app.register(
     async (api) => {
       api.addHook('preHandler', guards.requireSession);
       registerMe(api);
-      registerConnectorRoutes(api, { services, allowHttp });
+      registerConnectorRoutes(api, { services, config, allowHttp });
+      registerBuiltinRoutes(api, {
+        builtins: services.builtins,
+        redirectUri: services.redirectUri,
+      });
       registerConnectSecret(api, { db, clientSecret: config.OIDC_CLIENT_SECRET });
       registerEndpointRoutes(api, {
         services,

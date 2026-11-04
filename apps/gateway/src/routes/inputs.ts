@@ -85,4 +85,50 @@ export function remoteConnectorPatch(allowHttp: boolean) {
   });
 }
 
+const builtinKey = z.string().min(1).max(100);
+
+// 서비스 계정 JSON 키 원문. 저장할 때 필요한 필드만 남긴다
+const serviceAccountAuth = z.object({
+  type: z.literal('service_account'),
+  key: z.string().min(1).max(20_000),
+});
+
+const oauthClient = {
+  clientId: z.string().trim().min(1).max(500),
+  clientSecret: z.string().trim().min(1).max(500),
+};
+
+// 서비스 계정 내장 커넥터: 저장하지 않고 테스트하거나 엔드포인트와 함께 저장한다
+export const builtinConnectorInput = z.object({
+  builtin: builtinKey,
+  name: displayName,
+  auth: serviceAccountAuth,
+});
+
+// 원격 커넥터 또는 서비스 계정 내장 커넥터
+export function newConnectorInput(allowHttp: boolean) {
+  return z.union([remoteConnectorInput(allowHttp), builtinConnectorInput]);
+}
+
+// 업스트림 OAuth 내장 커넥터: 동의 전에 "연결 중"으로 먼저 저장한다 (SCR-EP-02)
+export const oauthConnectorInput = z.object({
+  builtin: builtinKey,
+  name: displayName,
+  auth: z.object({ type: z.literal('oauth2'), ...oauthClient }),
+});
+
+// client를 주면 동의가 끝난 뒤 그 OAuth 앱으로 바꾼다 (SCR-EP-03 다른 계정·앱으로 바꾸기)
+export const oauthStartInput = z.object({
+  returnTo: z.string().max(2000).optional(),
+  client: z.object(oauthClient).optional(),
+});
+
+// 원격(url·none·static_token)이나 내장(service_account) 커넥터 설정 변경
+export function connectorPatch(allowHttp: boolean) {
+  const remote = remoteConnectorPatch(allowHttp);
+  return remote.extend({
+    auth: z.union([remote.shape.auth.unwrap(), serviceAccountAuth]).optional(),
+  });
+}
+
 export const toolNameList = z.array(z.string().min(1).max(200)).min(1).max(1000);

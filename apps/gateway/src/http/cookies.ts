@@ -1,10 +1,13 @@
 import type { CookieSerializeOptions } from '@fastify/cookie';
 import { LOGIN_STATE_TTL_MS } from '../auth/login-state.ts';
+import { UPSTREAM_STATE_TTL_MS } from '../auth/upstream-state.ts';
 import type { Config } from '../config.ts';
 
 export const SESSION_COOKIE = 'outlet_session';
 // 로그인 시작부터 콜백까지만 쓴다. 콜백 경로에만 보낸다
 export const LOGIN_STATE_COOKIE = 'outlet_login';
+// 내장 커넥터의 업스트림 OAuth 동의 시작부터 콜백까지만 쓴다. 업스트림 콜백 경로에만 보낸다
+export const UPSTREAM_STATE_COOKIE = 'outlet_upstream';
 // IdP 로그아웃(end_session)의 id_token_hint. 로그아웃 경로에만 보낸다.
 // 세션 테이블을 바꾸지 않으려고 DB 대신 쿠키에 둔다
 export const ID_TOKEN_COOKIE = 'outlet_id_token';
@@ -36,5 +39,15 @@ export function idTokenCookieOptions(config: Config): CookieSerializeOptions {
     sameSite: 'lax',
     secure: isSecure(config),
     maxAge: config.SESSION_TTL_HOURS * 60 * 60,
+  };
+}
+
+export function upstreamStateCookieOptions(config: Config): CookieSerializeOptions {
+  return {
+    path: '/auth/upstream',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isSecure(config),
+    maxAge: UPSTREAM_STATE_TTL_MS / 1000,
   };
 }
