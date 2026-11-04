@@ -29,3 +29,9 @@ export function createAuthGuards(deps: { db: Db; now: () => Date }) {
 }
 
 export type AuthGuards = ReturnType<typeof createAuthGuards>;
+
+// requireSession이 걸린 라우트에서 현재 사용자를 꺼낸다
+export function sessionUser(request: FastifyRequest): SessionUser {
+  if (!request.user) throw new HttpError('unauthorized');
+  return request.user;
+}

@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { ServiceError } from '../services/errors.ts';
 import { HttpError, registerErrorHandlers, sendError } from './errors.ts';
 
 function buildTestApp() {
@@ -14,6 +15,9 @@ function buildTestApp() {
     throw new Error('secret-token-123 in message');
   });
   app.post('/json', async () => ({ ok: true }));
+  app.get('/service', async () => {
+    throw new ServiceError('connection_test_failed', { result: 'auth_failed' });
+  });
   app.setNotFoundHandler((_request, reply) => sendError(reply, 'not_found'));
   return app;
 }
@@ -24,6 +28,19 @@ describe('오류 응답', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({
       error: { code: 'forbidden', message: expect.any(String) },
+      requestId: expect.any(String),
+    });
+  });
+
+  it('ServiceError는 분류에 맞는 상태 코드와 details를 준다', async () => {
+    const res = await buildTestApp().inject('/service');
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({
+      error: {
+        code: 'connection_test_failed',
+        message: expect.any(String),
+        details: { result: 'auth_failed' },
+      },
       requestId: expect.any(String),
     });
   });

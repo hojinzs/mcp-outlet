@@ -5,12 +5,18 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { createOidcClient } from './auth/oidc.ts';
 import type { Config } from './config.ts';
+import { createSecretBox } from './crypto/secrets.ts';
 import type { Db } from './db/client.ts';
 import { createAuthGuards } from './http/auth-guard.ts';
 import { registerErrorHandlers, sendError } from './http/errors.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
+import { registerConnectorRoutes } from './routes/connectors.ts';
+import { registerEndpointRoutes } from './routes/endpoints.ts';
 import { registerHealth } from './routes/health.ts';
 import { registerMe } from './routes/me.ts';
+import { createRuntimes } from './runtimes/index.ts';
+import type { EndpointServiceDeps } from './services/endpoints.ts';
+import { createUpstreamFetch } from './upstream/safe-fetch.ts';
 
 // 테스트에서 IdP 통신과 시계를 바꿔 끼운다
 export type AppDeps = {
@@ -49,6 +55,9 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
     deps,
   );
   const guards = createAuthGuards({ db, now: deps.now });
+  const services = createServices(config, db, deps.now);
+  // UPSTREAM_ALLOW_CIDRS를 지정한 설치에서만 http 주소를 입력으로 받는다
+  const allowHttp = config.UPSTREAM_ALLOW_CIDRS.length > 0;
 
   registerHealth(app, db);
   registerAuthRoutes(app, { config, db, oidc, now: deps.now });
@@ -56,6 +65,15 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
     async (api) => {
       api.addHook('preHandler', guards.requireSession);
       registerMe(api);
+      registerConnectorRoutes(api, { services, allowHttp });
+      registerEndpointRoutes(api, {
+        services,
+        allowHttp,
+        oauthClient: {
+          clientId: config.OIDC_CLIENT_ID,
+          hasClientSecret: Boolean(config.OIDC_CLIENT_SECRET),
+        },
+      });
     },
     { prefix: '/api' },
   );
@@ -70,6 +88,25 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
   });
 
   return app;
+}
+
+function createServices(config: Config, db: Db, now: () => Date): EndpointServiceDeps {
+  const upstreamFetch = createUpstreamFetch({
+    allowCidrs: config.UPSTREAM_ALLOW_CIDRS,
+    timeoutMs: config.UPSTREAM_TIMEOUT_MS,
+  });
+  return {
+    db,
+    secrets: createSecretBox({
+      current: config.ENCRYPTION_KEY,
+      previous: config.ENCRYPTION_KEY_PREVIOUS,
+    }),
+    runtimes: createRuntimes({ fetch: upstreamFetch, timeoutMs: config.UPSTREAM_TIMEOUT_MS }),
+    maxConnectorsPerUser: config.MAX_CONNECTORS_PER_USER,
+    maxEndpointsPerUser: config.MAX_ENDPOINTS_PER_USER,
+    publicBaseUrl: config.PUBLIC_BASE_URL,
+    now,
+  };
 }
 
 async function registerAdminUi(app: FastifyInstance, config: Config): Promise<boolean> {
