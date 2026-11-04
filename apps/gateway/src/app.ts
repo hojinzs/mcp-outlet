@@ -99,9 +99,9 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
 
   const serveAdmin = await registerAdminUi(app, config);
   app.setNotFoundHandler((request, reply) => {
-    // SPA 라우팅: /admin 아래 없는 경로는 index.html로
-    if (serveAdmin && request.method === 'GET' && request.url.startsWith('/admin')) {
-      return reply.sendFile('index.html');
+    // SPA 라우팅: /admin 아래 화면 경로는 index.html로. 없는 정적 파일은 404로 둔다
+    if (serveAdmin && request.method === 'GET' && isAdminPagePath(request.url)) {
+      return reply.header('cache-control', 'no-cache').sendFile('index.html');
     }
     return sendError(reply, 'not_found');
   });
@@ -126,6 +126,12 @@ function createServices(config: Config, db: Db, now: () => Date): EndpointServic
     publicBaseUrl: config.PUBLIC_BASE_URL,
     now,
   };
+}
+
+function isAdminPagePath(url: string): boolean {
+  const path = url.split('?')[0] ?? '';
+  if (path !== '/admin' && !path.startsWith('/admin/')) return false;
+  return !path.startsWith('/admin/assets/');
 }
 
 async function registerAdminUi(app: FastifyInstance, config: Config): Promise<boolean> {
