@@ -50,7 +50,7 @@
 
 ## 동작
 
-- 값은 `GET /api/endpoints/:id/connect-info`로 받는다. Client Secret은 보기·복사 버튼을 눌렀을 때만 따로 요청하고, 요청할 때마다 누가 언제 봤는지 기록한다(값은 기록하지 않음).
+- 값은 `GET /api/endpoints/:id/connect-info`로 받는다. Client Secret은 보기·복사 버튼을 눌렀을 때만 따로 요청하고, 요청할 때마다 누가 언제 봤는지 작업 기록(`activity_logs`)에 남긴다(값은 기록하지 않음).
 - 복사하면 토스트로 "복사했습니다"를 띄운다.
 
 ## 필요한 API (안)
