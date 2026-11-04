@@ -50,7 +50,7 @@
 
 ## 동작
 
-- 값은 `GET /api/endpoints/:id/connect-info`로 받는다. Client Secret은 보기 버튼을 눌렀을 때만 따로 요청한다.
+- 값은 `GET /api/endpoints/:id/connect-info`로 받는다. Client Secret은 보기·복사 버튼을 눌렀을 때만 따로 요청하고, 요청할 때마다 누가 언제 봤는지 기록한다(값은 기록하지 않음).
 - 복사하면 토스트로 "복사했습니다"를 띄운다.
 
 ## 필요한 API (안)
@@ -60,6 +60,9 @@
 | GET    | `/api/endpoints/:id/connect-info` | 서버 URL, Client ID, secret 존재 여부    |
 | GET    | `/api/connect-secret`             | Client Secret. 요청을 감사 목적으로 기록 |
 
-## 정할 것
+## 결정 사항
 
-- **Client Secret 공유**: Confidential client라 모든 사용자에게 같은 secret을 보여준다. secret을 아는 사람은 이 client로 토큰을 받을 수 있지만, 토큰은 로그인한 본인 것이고 엔드포인트 소유자 검사(F-AUTH-05)가 있어 다른 사람의 엔드포인트는 못 쓴다. Public client로 Claude·ChatGPT가 붙는지 확인되면 이 줄을 없앤다(PRD 미결 사항).
+- **Client Secret 공유 (2026-11-04)**: Confidential client를 유지하고 모든 사용자에게 같은 secret을 보여준다. secret을 알아도 허용된 계정으로 IdP에 로그인해야 토큰을 받고, 엔드포인트 소유자 검사(F-AUTH-05)로 다른 사람의 엔드포인트는 쓸 수 없다. 대신 다음을 둔다.
+  - secret 보기·복사 요청을 기록한다.
+  - secret을 바꾸면 연결된 모든 클라이언트에 다시 입력해야 한다. 회전 절차(IdP에서 재발급 → `OIDC_CLIENT_SECRET` 교체 → 재시작 → 사용자 공지)를 운영 문서에 둔다.
+  - 고객사 설치 전에 자체 인가 서버(DCR·CIMD)로 공유 secret을 없애는 방안을 다시 본다(PRD 범위 밖과 v2 과제).

@@ -31,10 +31,10 @@ IdP 로그인은 됐지만 이 화면을 쓸 권한이 없을 때, 이유와 다
 
 ## 동작
 
-- **다른 계정으로 로그인**: IdP 세션이 그대로면 같은 계정으로 다시 로그인된다. 그래서 IdP 로그아웃(end_session)을 거쳐 SCR-COM-02로 돌아오게 한다.
+- **다른 계정으로 로그인**: IdP 세션이 그대로면 같은 계정으로 다시 로그인된다. 그래서 레이아웃(SCR-COM-01)의 같은 이름 메뉴와 똑같이 IdP 로그아웃(end_session)을 거쳐 SCR-COM-02로 돌아오게 한다.
 - `not_member`는 세션을 만들지 않으므로, 이 화면에서 새로고침해도 다른 화면으로 넘어가지 않는다.
 - 그룹이 추가된 뒤에는 다시 로그인하면 바로 들어올 수 있다(groups는 로그인마다 갱신).
 
-## 정할 것
+## 결정 사항
 
-- `not_member`에서 IdP 로그아웃 주소를 쓰려면 gateway가 discovery의 `end_session_endpoint`를 알고 있어야 한다. Authentik은 provider마다 이 주소를 제공한다.
+- **IdP 로그아웃 주소 (2026-11-04)**: OIDC discovery의 `end_session_endpoint`를 쓴다. discovery에 이 값이 없는 IdP면 "다른 계정으로 로그인" 버튼을 숨기고 IdP에서 직접 로그아웃하라고 안내한다.

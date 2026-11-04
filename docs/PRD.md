@@ -76,14 +76,15 @@ AI 클라이언트는 게이트웨이에만 붙고, 게이트웨이가 런타임
 
 ### 인증·인가
 
-| ID        | 요구사항                                                                                                                                        |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| F-AUTH-01 | IdP는 OIDC discovery URL·client_id·secret 환경변수로 설정한다. Authentik 전용 코드를 두지 않는다                                                |
-| F-AUTH-02 | 관리 UI 로그인은 authorization code + PKCE, 세션 쿠키                                                                                           |
-| F-AUTH-03 | MCP 요청은 Bearer JWT의 서명·iss·aud·exp를 검증한다. 실패 시 401과 `WWW-Authenticate: Bearer resource_metadata=…` 반환                          |
-| F-AUTH-04 | 엔드포인트마다 보호 리소스 메타데이터 `/.well-known/oauth-protected-resource/c/{id}/mcp`를 발행하고 authorization_servers에 IdP issuer를 넣는다 |
-| F-AUTH-05 | 토큰의 sub가 엔드포인트 소유자와 같아야 통과한다. 다른 사람의 URL로는 호출할 수 없다                                                            |
-| F-AUTH-06 | groups 클레임으로 로그인 허용·관리자·전역 커넥터 공개 범위를 판정한다. 클레임 이름은 설정값                                                     |
+| ID        | 요구사항                                                                                                                                                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-AUTH-01 | IdP는 OIDC discovery URL·client_id·secret 환경변수로 설정한다. 로그인·토큰 검증에는 Authentik 전용 코드를 두지 않는다                                                                                                                    |
+| F-AUTH-02 | 관리 UI 로그인은 authorization code + PKCE, 세션 쿠키                                                                                                                                                                                    |
+| F-AUTH-03 | MCP 요청은 Bearer JWT의 서명·iss·aud·exp를 검증한다. 실패 시 401과 `WWW-Authenticate: Bearer resource_metadata=…` 반환                                                                                                                   |
+| F-AUTH-04 | 엔드포인트마다 보호 리소스 메타데이터 `/.well-known/oauth-protected-resource/c/{id}/mcp`를 발행하고 authorization_servers에 IdP issuer를 넣는다                                                                                          |
+| F-AUTH-05 | 토큰의 sub가 엔드포인트 소유자와 같아야 통과한다. 다른 사람의 URL로는 호출할 수 없다                                                                                                                                                     |
+| F-AUTH-06 | groups 클레임으로 로그인 허용·관리자·전역 커넥터 공개 범위를 판정한다. 클레임 이름은 설정값                                                                                                                                              |
+| F-AUTH-07 | IdP 그룹 목록이 필요한 기능(커넥터 공개 그룹 후보)은 그룹 디렉터리 어댑터를 거친다. 기본 어댑터는 로그인한 사용자의 groups를 모으고, IdP 관리 API를 쓰는 어댑터(1차 Authentik)는 설정으로 켠다. 어댑터가 실패해도 기본 어댑터로 동작한다 |
 
 ### 커넥터
 
@@ -166,9 +167,9 @@ AI 클라이언트는 게이트웨이에만 붙고, 게이트웨이가 런타임
 
 ## 미결 사항
 
-- [ ] IdP client 유형: Public(PKCE, secret 없음)으로 Claude·ChatGPT 양쪽이 붙는지 확인. 안 되면 Confidential client의 secret을 모든 사용자에게 보여줘야 하는 문제를 정리
+- [x] IdP client 유형: Confidential client를 유지하고 secret을 사용자에게 공유한다. 보기 기록과 회전 절차를 둔다 (2026-11-04)
 - [ ] 토큰 audience: 현행처럼 client_id 고정 유지할지, resource URL 기준으로 갈지
-- [ ] 업스트림 OAuth 갱신 실패(구글 테스트 앱은 7일 만료 등) 시 사용자에게 재연결을 알리는 방식
+- [x] 업스트림 OAuth 갱신 실패: MCP 오류 응답에 재연결 안내와 링크를 넣고, 관리 UI에 상태를 표시한다. 외부 알림 채널은 두지 않는다 (2026-11-04)
 - [ ] 관리 UI 구성: 게이트웨이와 같은 서버에서 렌더링할지, 별도 SPA로 둘지
 - [ ] 규모 목표: 내부용 기준 동시 사용자·동시 stdio 프로세스 상한 기본값
 - [ ] 프로젝트 이름과 레포 위치 (`daniworks-home` 모노레포 안 / 별도 레포)
