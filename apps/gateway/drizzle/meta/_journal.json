@@ -15,6 +15,13 @@
       "when": 1793783390308,
       "tag": "0001_connector_status_activity_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793788708651,
+      "tag": "0002_sessions",
+      "breakpoints": true
     }
   ]
 }

@@ -26,10 +26,12 @@ Node 24.12 이상과 Docker가 필요하다.
 ```bash
 corepack enable
 pnpm install
-cp .env.example .env   # ENCRYPTION_KEY, OIDC 값 채우기
+cp .env.example .env   # ENCRYPTION_KEY, SESSION_SECRET, OIDC 값 채우기
 docker compose -f compose.yaml -f compose.dev.yaml up -d postgres
 pnpm dev               # gateway :3000, web :5173/admin/
 ```
+
+`pnpm dev`에서는 `PUBLIC_BASE_URL=http://localhost:5173`으로 둔다. Vite가 `/api`·`/auth`·`/c`·`/.well-known`을 gateway로 넘기므로 로그인 콜백, MCP 엔드포인트, 관리 UI가 한 출처가 된다. 로컬에 띄운 테스트용 MCP 서버를 커넥터로 붙이려면 `UPSTREAM_ALLOW_CIDRS=127.0.0.1/32`를 넣는다(운영에서는 비운다).
 
 | 명령                                            | 내용                                                              |
 | ----------------------------------------------- | ----------------------------------------------------------------- |

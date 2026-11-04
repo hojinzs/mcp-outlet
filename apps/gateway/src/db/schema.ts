@@ -64,6 +64,23 @@ export const users = pgTable('users', {
   ...timestamps,
 });
 
+// 관리 UI 로그인 세션. 쿠키에는 무작위 토큰을 두고 DB에는 그 SHA-256만 저장한다.
+// 행을 지우면 바로 로그아웃된다 (권한 회수·강제 만료)
+export const sessions = pgTable(
+  'sessions',
+  {
+    tokenHash: text().primaryKey(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // 요청 때 갱신하되 최대 1분에 한 번
+    lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (t) => [index().on(t.userId), index().on(t.expiresAt)],
+);
+
 // owner가 없으면 전역, 있으면 개인 커넥터
 export const connectors = pgTable(
   'connectors',

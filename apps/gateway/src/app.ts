@@ -7,7 +7,7 @@ import type { Db } from './db/client.ts';
 import { registerHealth } from './routes/health.ts';
 
 export async function buildApp(config: Config, db: Db) {
-  const app = Fastify({ logger: { level: config.LOG_LEVEL } });
+  const app = Fastify({ logger: { level: config.LOG_LEVEL }, trustProxy: config.TRUST_PROXY });
 
   registerHealth(app, db);
 
