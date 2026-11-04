@@ -15,7 +15,7 @@ export type OidcMetadata = z.infer<typeof metadataSchema>;
 
 const tokenResponseSchema = z.object({ id_token: z.string().min(1) });
 
-export type OidcErrorKind = 'discovery' | 'token_exchange' | 'id_token';
+export type OidcErrorKind = 'discovery' | 'token_exchange' | 'id_token' | 'access_token';
 
 // 원인 예외는 담지 않는다. 로그·응답에는 kind만 쓴다
 export class OidcError extends Error {
@@ -145,6 +145,32 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
     }
   }
 
+  // MCP 요청의 Bearer JWT: 서명·iss·aud·exp (F-AUTH-03). aud는 OIDC_AUDIENCE와 비교한다
+  async function verifyAccessToken(
+    token: string,
+    audience: string,
+  ): Promise<JWTPayload & { sub: string }> {
+    const { metadata, jwks } = await load();
+    try {
+      const { payload } = await jwtVerify(token, jwks, {
+        issuer: metadata.issuer,
+        audience,
+        currentDate: deps.now(),
+        clockTolerance: CLOCK_TOLERANCE_SECONDS,
+        requiredClaims: ['sub', 'exp'],
+      });
+      if (typeof payload.sub !== 'string' || payload.sub === '') throw new Error('sub');
+      return { ...payload, sub: payload.sub };
+    } catch {
+      throw new OidcError('access_token');
+    }
+  }
+
+  // 보호 리소스 메타데이터의 authorization_servers (F-AUTH-04)
+  async function issuer(): Promise<string> {
+    return (await load()).metadata.issuer;
+  }
+
   // RP-initiated logout. IdP가 지원하지 않으면 null (SCR-COM-03 결정 사항).
   // post_logout_redirect_uri는 id_token_hint가 있을 때만 붙인다. 등록된 로그아웃 URI가 있는 IdP는
   // hint 없는 post_logout_redirect_uri를 거부한다(OIDC RP-Initiated Logout 1.0)
@@ -163,7 +189,14 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
     return url.toString();
   }
 
-  return { authorizationUrl, exchangeCode, verifyIdToken, endSessionUrl };
+  return {
+    authorizationUrl,
+    exchangeCode,
+    verifyIdToken,
+    verifyAccessToken,
+    issuer,
+    endSessionUrl,
+  };
 }
 
 export type OidcClient = ReturnType<typeof createOidcClient>;
