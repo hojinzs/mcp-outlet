@@ -8,6 +8,13 @@
       "when": 1793765376581,
       "tag": "0000_magenta_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793783390308,
+      "tag": "0001_connector_status_activity_logs",
+      "breakpoints": true
     }
   ]
 }
