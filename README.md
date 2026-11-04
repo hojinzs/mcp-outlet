@@ -77,7 +77,7 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 
 ## MCP 엔드포인트
 
-`/c/{endpointId}/mcp`는 Streamable HTTP(POST·GET·DELETE)를 원격 커넥터로 중계한다.
+`/c/{endpointId}/mcp`는 Streamable HTTP(POST·GET·DELETE)를 원격 커넥터로 중계하거나 내장 커넥터가 직접 처리한다. 내장 커넥터는 요청마다 상태 없는 MCP 서버로 답하므로 POST만 받고 GET·DELETE는 405다.
 
 - **인증**: `Authorization: Bearer <IdP access token>`. 서명(JWKS)·iss·aud(`OIDC_AUDIENCE`, 기본 client_id)·exp를 확인한다. 토큰이 없거나 틀리면 엔드포인트가 있든 없든 401과 `WWW-Authenticate: Bearer resource_metadata="{PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/c/{id}/mcp"`를 준다. 메타데이터(RFC 9728)는 `resource`·`authorization_servers`(IdP issuer)·`scopes_supported`를 담는다.
 - **인가**: 요청마다 토큰의 groups로 로그인 허용 그룹을 다시 확인하고(아니면 403) 사용자의 email·groups를 갱신한다. sub가 엔드포인트 소유자가 아니면 없는 엔드포인트와 같은 404, 엔드포인트 비활성·커넥터 사용 중지는 403이다.
@@ -93,11 +93,14 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 
 | 메서드 | 경로                              | 내용                                                                                                |
 | ------ | --------------------------------- | --------------------------------------------------------------------------------------------------- |
-| POST   | `/api/connectors/test`            | 저장하지 않은 원격 커넥터 설정으로 연결 테스트. `{ result, tools? }`                                |
+| GET    | `/api/builtins`                   | 내장 서비스 목록과 서비스별 접속 방식(서비스 계정·OAuth), OAuth 리디렉션 URI                        |
+| POST   | `/api/connectors/test`            | 저장하지 않은 원격·서비스 계정 커넥터 설정으로 연결 테스트. `{ result, tools? }`                    |
+| POST   | `/api/connectors`                 | OAuth 내장 커넥터를 동의 전에 "연결 중"(`pending`)으로 저장. `{ builtin, name, auth }`              |
+| POST   | `/api/connectors/:id/oauth/start` | 업스트림 동의 주소. state·PKCE는 암호화 쿠키. `client`를 주면 동의 뒤 그 OAuth 앱으로 교체          |
 | GET    | `/api/connectors`                 | 내 커넥터 목록                                                                                      |
 | GET    | `/api/connectors/:id`             | 커넥터 설정·자격증명 설정 여부·상태·엔드포인트 수                                                   |
 | GET    | `/api/connectors/:id/tools`       | 캐시된 툴 목록                                                                                      |
-| PATCH  | `/api/connectors/:id`             | 이름·주소·인증 교체. 주소·인증을 바꾸면 연결 테스트를 통과해야 저장. 토큰을 빼면 기존 토큰 유지     |
+| PATCH  | `/api/connectors/:id`             | 이름·주소·인증·서비스 계정 키 교체. 인증을 바꾸면 연결 테스트를 통과해야 저장. 토큰을 빼면 유지     |
 | POST   | `/api/connectors/:id/test`        | 재테스트, 상태·툴 캐시 갱신                                                                         |
 | DELETE | `/api/connectors/:id`             | 커넥터와 그 엔드포인트·자격증명 삭제                                                                |
 | GET    | `/api/endpoints`                  | 엔드포인트 목록(상태, 허용·전체·새 툴 수, URL)                                                      |
@@ -109,7 +112,17 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 | GET    | `/api/endpoints/:id/connect-info` | 엔드포인트 URL·client_id·secret 설정 여부                                                           |
 | GET    | `/api/connect-secret`             | 공유 Client Secret. 볼 때마다 `activity_logs`에 `client_secret.view`(값 없음). Public client면 404  |
 
-연결 테스트 실패는 `connection_test_result` 분류(`private_address`·`unreachable`·`auth_failed`·`not_mcp`·`timeout`·`redirect`)로만 준다. 저장 흐름에서 실패하면 422 `connection_test_failed`와 `error.details.result`, 툴 목록이 바뀌었으면 409 `tools_changed`, 상한(`MAX_CONNECTORS_PER_USER`·`MAX_ENDPOINTS_PER_USER`, 기본 20·50)을 넘으면 409 `limit_exceeded`다.
+연결 테스트 실패는 `connection_test_result` 분류(`private_address`·`unreachable`·`auth_failed`·`not_mcp`·`timeout`·`redirect`, 내장 커넥터는 `permission_denied`·`upstream_error`도)로만 준다. 저장 흐름에서 실패하면 422 `connection_test_failed`와 `error.details.result`, 툴 목록이 바뀌었으면 409 `tools_changed`, 상한(`MAX_CONNECTORS_PER_USER`·`MAX_ENDPOINTS_PER_USER`, 기본 20·50)을 넘으면 409 `limit_exceeded`다.
+
+### 내장 커넥터 (Google Analytics 4 + Search Console)
+
+`packages/builtin-connectors`의 `BuiltinConnector`(툴 정의·`checkAccess`·`callTool`, 지원 인증 방식)를 gateway의 builtin 런타임이 MCP 서버로 감싼다. GA4(속성 목록·메타데이터·runReport·realtime)와 Search Console(사이트·검색 실적·URL 검사·사이트맵) 툴은 모두 조회 전용(`readOnlyHint`)이고, Google API를 fetch로 직접 부른다. 업스트림 오류는 분류 문구로만 돌려주고, 400(인자 오류)일 때만 Google의 `error.message`(300자까지)를 붙여 모델이 인자를 고치게 한다.
+
+- **서비스 계정 JSON**: 키에서 `client_email`·`private_key`만 암호화 저장하고(`token_uri`는 무시), RS256 assertion(RFC 7523)으로 access token을 받는다. 화면에는 `client_email`만 보인다. 이 이메일을 GA4 속성(속성 액세스 관리, 뷰어)과 Search Console 사이트(사용자 및 권한)에 추가해야 데이터가 보인다.
+- **업스트림 OAuth2**: 사용자가 자기 Google OAuth 앱(웹 애플리케이션)의 Client ID·Secret을 넣고 "Google로 연결"을 누르면 커넥터를 `pending`으로 저장한 뒤 동의 화면(PKCE, `access_type=offline`, `prompt=consent`)으로 보낸다. 리디렉션 URI는 `{PUBLIC_BASE_URL}/auth/upstream/callback`이다. 콜백은 세션 사용자가 커넥터 소유자일 때만 refresh token을 암호화 저장하고 `returnTo`에 `connected=1`(실패면 `connect_error=cancelled|failed`)을 붙여 돌려보낸다. 24시간 안에 엔드포인트를 만들지 않은 `pending` 커넥터는 다음 생성 때 지운다.
+- **토큰 갱신**: access token은 자격증명에 함께 암호화해 두고 만료 1분 전부터 새로 받는다. 같은 프로세스는 요청을 하나로 합치고, 인스턴스 사이는 자격증명 행 잠금(`FOR UPDATE`)으로 한 번만 갱신한다. 갱신이 `invalid_grant`·`invalid_client`로 거부되면 커넥터를 `reauth_required`로 바꾸고, 툴 호출 결과에 재연결 안내와 엔드포인트 관리 화면 링크를 넣는다.
+- **Google Cloud 준비**: Analytics Data API·Analytics Admin API·Search Console API를 켠다. OAuth는 동의 화면을 Workspace **내부(Internal)** 앱으로 만들거나 게시한다. 외부(External) 앱을 테스트 상태로 두면 refresh token이 7일 뒤 만료된다.
+- 외부 API 주소는 커넥터 코드에만 있으므로 사용자 URL용 SSRF 검사를 거치지 않고, 업스트림 호출 상한은 `UPSTREAM_TIMEOUT_MS`를 같이 쓴다.
 
 ### 관리 UI
 
