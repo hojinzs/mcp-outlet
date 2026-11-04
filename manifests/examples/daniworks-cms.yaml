@@ -1,0 +1,17 @@
+# P0: 기존 DEV-352 게이트웨이를 대체하는 원격 MCP 프록시
+manifestVersion: 1
+name: Daniworks Home CMS
+description: Strapi MCP (읽기·쓰기)
+runtime: remote
+url: https://cms.example.com/mcp # 실제 Strapi MCP 주소로 교체
+visibleGroups: []
+credentials:
+  - key: CMS_TOKEN
+    label: Strapi API 토큰
+    secret: true
+    scope: global
+auth:
+  type: static_token
+  credential: CMS_TOKEN
+  header: Authorization
+  prefix: "Bearer "

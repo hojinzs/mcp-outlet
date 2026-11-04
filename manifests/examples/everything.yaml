@@ -1,0 +1,13 @@
+# stdio 런타임 검증용: MCP 공식 테스트 서버
+manifestVersion: 1
+name: MCP Everything (테스트)
+runtime: stdio
+package:
+  registry: npm
+  name: "@modelcontextprotocol/server-everything"
+  version: "2.1.0"
+command: mcp-server-everything
+args: []
+credentials: []
+auth:
+  type: none

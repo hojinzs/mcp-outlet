@@ -1,0 +1,6 @@
+# 로컬 개발용: Postgres만 띄우고 gateway·runner는 pnpm dev로 실행한다
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d postgres
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"

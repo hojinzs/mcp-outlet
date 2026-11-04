@@ -1,0 +1,16 @@
+{
+  "name": "@mcp-outlet/runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@mcp-outlet/shared": "workspace:*",
+    "fastify": "5.12.8",
+    "zod": "4.6.7"
+  }
+}

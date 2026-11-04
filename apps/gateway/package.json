@@ -1,0 +1,24 @@
+{
+  "name": "@mcp-outlet/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p .",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@fastify/static": "10.1.8",
+    "@mcp-outlet/builtin-connectors": "workspace:*",
+    "@mcp-outlet/shared": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "fastify": "5.12.8",
+    "postgres": "3.4.9",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11"
+  }
+}

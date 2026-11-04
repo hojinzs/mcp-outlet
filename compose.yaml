@@ -1,0 +1,56 @@
+name: mcp-outlet
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-outlet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env에 POSTGRES_PASSWORD 필요}
+      POSTGRES_DB: ${POSTGRES_DB:-outlet}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-outlet}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-outlet}
+      RUNNER_URL: http://runner:4000
+    ports:
+      - "${GATEWAY_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      runner:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+    restart: unless-stopped
+
+  # DB 주소와 암호화 키를 넘기지 않도록 env_file 없이 필요한 값만 준다
+  runner:
+    build:
+      context: .
+      dockerfile: docker/runner.Dockerfile
+    environment:
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?.env에 RUNNER_TOKEN 필요}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - runner-data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  runner-data:
