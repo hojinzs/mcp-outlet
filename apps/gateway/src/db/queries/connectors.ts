@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne, notExists } from 'drizzle-orm';
 import type { DbOrTx } from '../client.ts';
 import { connectors, credentials, endpoints } from '../schema.ts';
 
@@ -22,6 +22,7 @@ function selectWithCounts(db: DbOrTx) {
     .select({
       connector: connectors,
       credentialUpdatedAt: credentials.updatedAt,
+      credentialAccount: credentials.account,
       endpointCount: db.$count(endpoints, eq(endpoints.connectorId, connectors.id)),
     })
     .from(connectors)
@@ -69,6 +70,32 @@ export async function deleteConnector(db: DbOrTx, ownerId: string, id: string): 
     .where(and(eq(connectors.id, id), eq(connectors.ownerId, ownerId)))
     .returning({ id: connectors.id });
   return deleted.length > 0;
+}
+
+// 업스트림 OAuth 동의 전에 저장했다가 엔드포인트를 만들지 않고 남은 커넥터 (SCR-EP-02)
+export async function deleteStalePendingConnectors(
+  db: DbOrTx,
+  ownerId: string,
+  createdBefore: Date,
+): Promise<void> {
+  await db
+    .delete(connectors)
+    .where(
+      and(
+        eq(connectors.ownerId, ownerId),
+        eq(connectors.status, 'pending'),
+        lt(connectors.createdAt, createdBefore),
+        notExists(db.select().from(endpoints).where(eq(endpoints.connectorId, connectors.id))),
+      ),
+    );
+}
+
+// 업스트림 토큰 갱신이 거부되면 사용자가 다시 연결할 때까지 재연결 필요로 둔다 (F-RUN-03)
+export async function markReauthRequired(db: DbOrTx, id: string): Promise<void> {
+  await db
+    .update(connectors)
+    .set({ status: 'reauth_required', updatedAt: connectors.updatedAt })
+    .where(and(eq(connectors.id, id), ne(connectors.status, 'reauth_required')));
 }
 
 // MCP 호출 결과로 정상·오류를 오간다. pending·reauth_required는 호출 결과로 바꾸지 않고,

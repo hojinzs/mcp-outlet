@@ -16,7 +16,7 @@ import type { CachedTool } from '../runtimes/types.ts';
 import {
   assertConnectorQuota,
   type ConnectorServiceDeps,
-  type RemoteConnectorInput,
+  type NewConnectorInput,
   registerTestedConnector,
 } from './connectors.ts';
 import { ServiceError } from './errors.ts';
@@ -145,7 +145,7 @@ function assertToolsAvailable(requested: readonly string[], available: readonly 
 
 export type CreateEndpointInput = { name: string; allowedTools: string[] } & (
   | { connectorId: string; connector?: undefined }
-  | { connector: RemoteConnectorInput; connectorId?: undefined }
+  | { connector: NewConnectorInput; connectorId?: undefined }
 );
 
 // 새 커넥터면 연결 테스트를 통과한 뒤 커넥터·자격증명·엔드포인트를 한 번에 저장한다 (SCR-EP-02)

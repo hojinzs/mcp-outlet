@@ -16,7 +16,7 @@ import {
   getConnector,
   type RemoteConnectorInput,
   retestConnector,
-  updateRemoteConnector,
+  updateConnectorSettings,
 } from './connectors.ts';
 import { loadCredentials } from './credentials.ts';
 import {
@@ -46,7 +46,8 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
     return {
       db,
       secrets: createSecretBox({ current: KEY }),
-      runtimes: createRuntimes({ fetch, timeoutMs: 3000 }),
+      runtimes: createRuntimes({ remote: { fetch, timeoutMs: 3000 } }),
+      builtins: new Map(),
       maxConnectorsPerUser: 20,
       maxEndpointsPerUser: 50,
       publicBaseUrl: 'https://outlet.test',
@@ -306,7 +307,7 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
     const id = created.connector.id;
 
     await expectServiceError(
-      updateRemoteConnector(deps(), owner, id, {
+      updateConnectorSettings(deps(), owner, id, {
         auth: { type: 'static_token', token: 'wrong', header: 'Authorization', prefix: 'Bearer ' },
       }),
       'connection_test_failed',
@@ -315,7 +316,7 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
     expect(unchanged).toEqual({ TOKEN: FAKE_UPSTREAM_TOKEN });
 
     // 토큰을 비우면 저장된 토큰으로 테스트한다
-    const kept = await updateRemoteConnector(deps(), owner, id, {
+    const kept = await updateConnectorSettings(deps(), owner, id, {
       url: upstream.url,
       auth: { type: 'static_token', header: 'Authorization', prefix: 'Bearer ' },
     });
@@ -324,11 +325,13 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
     // 업스트림이 꺼진 상태처럼 주소를 막아도 이름만 바꾸면 테스트하지 않는다
     const blocked = deps({
       runtimes: createRuntimes({
-        fetch: createUpstreamFetch({ allowCidrs: [], timeoutMs: 1000 }),
-        timeoutMs: 1000,
+        remote: {
+          fetch: createUpstreamFetch({ allowCidrs: [], timeoutMs: 1000 }),
+          timeoutMs: 1000,
+        },
       }),
     });
-    const renamed = await updateRemoteConnector(blocked, owner, id, { name: 'Renamed' });
+    const renamed = await updateConnectorSettings(blocked, owner, id, { name: 'Renamed' });
     expect(renamed.name).toBe('Renamed');
   });
 
@@ -341,8 +344,10 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
     });
     const blocked = deps({
       runtimes: createRuntimes({
-        fetch: createUpstreamFetch({ allowCidrs: [], timeoutMs: 1000 }),
-        timeoutMs: 1000,
+        remote: {
+          fetch: createUpstreamFetch({ allowCidrs: [], timeoutMs: 1000 }),
+          timeoutMs: 1000,
+        },
       }),
     });
     expect(await retestConnector(blocked, owner, created.connector.id)).toEqual({

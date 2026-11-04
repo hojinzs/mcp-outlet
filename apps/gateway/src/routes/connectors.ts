@@ -9,7 +9,7 @@ import {
   listConnectors,
   retestConnector,
   testUnsavedConnector,
-  updateRemoteConnector,
+  updateConnectorSettings,
 } from '../services/connectors.ts';
 import { parseId, remoteConnectorInput, remoteConnectorPatch } from './inputs.ts';
 
@@ -52,7 +52,7 @@ export function registerConnectorRoutes(api: FastifyInstance, deps: ConnectorRou
     const user = sessionUser(request);
     const id = parseId(request.params);
     const patch = patchSchema.parse(request.body);
-    return updateRemoteConnector(services, user.id, id, patch);
+    return updateConnectorSettings(services, user.id, id, patch);
   });
 
   api.post('/connectors/:id/test', async (request) => {

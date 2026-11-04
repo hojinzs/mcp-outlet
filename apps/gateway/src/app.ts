@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
+import { builtinConnectors } from '@mcp-outlet/builtin-connectors';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { createOidcClient } from './auth/oidc.ts';
 import type { Config } from './config.ts';
@@ -17,17 +18,28 @@ import { registerHealth } from './routes/health.ts';
 import { registerMcpRoutes } from './routes/mcp.ts';
 import { registerMe } from './routes/me.ts';
 import { createRuntimes } from './runtimes/index.ts';
+import type { Builtins } from './services/builtin-auth.ts';
 import type { EndpointServiceDeps } from './services/endpoints.ts';
 import { createMcpProxy } from './services/mcp-proxy.ts';
+import type { UpstreamOAuthDeps } from './services/upstream-oauth.ts';
+import { createUpstreamTokens } from './services/upstream-tokens.ts';
+import { createOAuth2Client } from './upstream/oauth2.ts';
 import { createUpstreamFetch } from './upstream/safe-fetch.ts';
 
-// 테스트에서 IdP 통신과 시계를 바꿔 끼운다
+// 테스트에서 IdP 통신, 내장 커넥터의 외부 API·토큰 호출, 시계를 바꿔 끼운다
 export type AppDeps = {
   fetch: typeof fetch;
+  apiFetch: typeof fetch;
+  builtins: Builtins;
   now: () => Date;
 };
 
-const defaultDeps: AppDeps = { fetch: globalThis.fetch, now: () => new Date() };
+const defaultDeps: AppDeps = {
+  fetch: globalThis.fetch,
+  apiFetch: globalThis.fetch,
+  builtins: builtinConnectors,
+  now: () => new Date(),
+};
 
 // 쿼리 문자열에는 인가 코드·state가 실리므로 경로만 남긴다
 const logSerializers = {
@@ -60,7 +72,7 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
     deps,
   );
   const guards = createAuthGuards({ db, now: deps.now });
-  const services = createServices(config, db, deps.now);
+  const services = createServices(config, db, deps);
   // UPSTREAM_ALLOW_CIDRS를 지정한 설치에서만 http 주소를 입력으로 받는다
   const allowHttp = config.UPSTREAM_ALLOW_CIDRS.length > 0;
 
@@ -109,22 +121,39 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
   return app;
 }
 
-function createServices(config: Config, db: Db, now: () => Date): EndpointServiceDeps {
-  const upstreamFetch = createUpstreamFetch({
-    allowCidrs: config.UPSTREAM_ALLOW_CIDRS,
-    timeoutMs: config.UPSTREAM_TIMEOUT_MS,
+function createServices(
+  config: Config,
+  db: Db,
+  deps: AppDeps,
+): EndpointServiceDeps & UpstreamOAuthDeps {
+  const timeoutMs = config.UPSTREAM_TIMEOUT_MS;
+  const upstreamFetch = createUpstreamFetch({ allowCidrs: config.UPSTREAM_ALLOW_CIDRS, timeoutMs });
+  const secrets = createSecretBox({
+    current: config.ENCRYPTION_KEY,
+    previous: config.ENCRYPTION_KEY_PREVIOUS,
+  });
+  const oauth = createOAuth2Client({ fetch: deps.apiFetch, timeoutMs, now: deps.now });
+  const tokens = createUpstreamTokens({
+    db,
+    secrets,
+    oauth,
+    builtins: deps.builtins,
+    now: deps.now,
   });
   return {
     db,
-    secrets: createSecretBox({
-      current: config.ENCRYPTION_KEY,
-      previous: config.ENCRYPTION_KEY_PREVIOUS,
+    secrets,
+    builtins: deps.builtins,
+    runtimes: createRuntimes({
+      remote: { fetch: upstreamFetch, timeoutMs },
+      builtin: { builtins: deps.builtins, tokens, fetch: deps.apiFetch, timeoutMs },
     }),
-    runtimes: createRuntimes({ fetch: upstreamFetch, timeoutMs: config.UPSTREAM_TIMEOUT_MS }),
+    oauth,
+    redirectUri: new URL('/auth/upstream/callback', config.PUBLIC_BASE_URL).toString(),
     maxConnectorsPerUser: config.MAX_CONNECTORS_PER_USER,
     maxEndpointsPerUser: config.MAX_ENDPOINTS_PER_USER,
     publicBaseUrl: config.PUBLIC_BASE_URL,
-    now,
+    now: deps.now,
   };
 }
 

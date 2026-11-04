@@ -16,12 +16,15 @@ export type ConnectionTestResult = (typeof connectionTestResult.enumValues)[numb
 
 export type ConnectionTest =
   | { result: 'ok'; tools: CachedTool[] }
-  | { result: Exclude<ConnectionTestResult, 'ok'> };
+  // reauthRequired: 업스트림 토큰 갱신이 거부되어 사용자가 다시 연결해야 한다
+  | { result: Exclude<ConnectionTestResult, 'ok'>; reauthRequired?: true };
 
 // gateway가 복호화한 자격증명을 실어 런타임에 넘긴다
 export type RuntimeConnector = {
   manifest: ConnectorManifest;
   credentials: Readonly<Record<string, string>>;
+  // 저장된 커넥터면 자격증명 행. 갱신한 업스트림 토큰을 다시 저장할 때 쓴다. 저장 전 테스트에는 없다
+  credentialRef?: { connectorId: string; userId: string } | undefined;
 };
 
 // 클라이언트의 Streamable HTTP 요청 하나. headers는 화이트리스트를 거친 값이고 Authorization은 없다
@@ -30,6 +33,8 @@ export type ForwardRequest = {
   headers: Readonly<Record<string, string>>;
   body?: string | undefined;
   signal: AbortSignal;
+  // 사용자가 고칠 수 있는 오류 문구에 넣을 관리 화면 주소 (F-RUN-03)
+  adminUrl: string;
 };
 
 export interface ConnectorRuntime {

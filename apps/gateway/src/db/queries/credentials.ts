@@ -12,16 +12,26 @@ export async function findUserCredential(db: DbOrTx, connectorId: string, userId
   return row;
 }
 
+// 업스트림 토큰을 갱신하는 동안 같은 행을 갱신하려는 다른 요청·인스턴스를 기다리게 한다
+export async function lockUserCredential(db: DbOrTx, connectorId: string, userId: string) {
+  const [row] = await db
+    .select({ id: credentials.id, ciphertext: credentials.ciphertext })
+    .from(credentials)
+    .where(and(eq(credentials.connectorId, connectorId), eq(credentials.userId, userId)))
+    .for('update');
+  return row;
+}
+
 export async function upsertUserCredential(
   db: DbOrTx,
-  values: { connectorId: string; userId: string; ciphertext: string },
+  values: { connectorId: string; userId: string; ciphertext: string; account: string | null },
 ): Promise<void> {
   await db
     .insert(credentials)
     .values({ ...values, scope: 'user' })
     .onConflictDoUpdate({
       target: [credentials.connectorId, credentials.userId],
-      set: { ciphertext: values.ciphertext },
+      set: { ciphertext: values.ciphertext, account: values.account },
     });
 }
 

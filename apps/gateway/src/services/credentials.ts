@@ -14,6 +14,10 @@ export type CredentialValues = Record<string, string>;
 
 const valuesSchema = z.record(z.string(), z.string());
 
+export function openCredentials(secrets: SecretBox, ciphertext: string): CredentialValues {
+  return valuesSchema.parse(JSON.parse(secrets.decrypt(ciphertext)));
+}
+
 export async function loadCredentials(
   deps: { db: DbOrTx; secrets: SecretBox },
   connectorId: string,
@@ -21,12 +25,12 @@ export async function loadCredentials(
 ): Promise<CredentialValues> {
   const row = await findUserCredential(deps.db, connectorId, userId);
   if (!row) return {};
-  const plain = deps.secrets.decrypt(row.ciphertext);
+  const values = openCredentials(deps.secrets, row.ciphertext);
   // ENCRYPTION_KEY_PREVIOUS로 푼 값은 읽은 김에 현재 키로 다시 저장한다 (무중단 회전)
   if (deps.secrets.needsRotation(row.ciphertext)) {
-    await replaceCiphertext(deps.db, row.id, deps.secrets.encrypt(plain));
+    await replaceCiphertext(deps.db, row.id, deps.secrets.encrypt(JSON.stringify(values)));
   }
-  return valuesSchema.parse(JSON.parse(plain));
+  return values;
 }
 
 // 값이 없으면(인증 없음) 자격증명 행을 지운다
@@ -34,11 +38,13 @@ export async function saveCredentials(
   deps: { db: DbOrTx; secrets: SecretBox },
   target: { connectorId: string; userId: string },
   values: CredentialValues,
+  // 연결된 업스트림 계정 표시값. 생략하면 비운다
+  account?: string | null,
 ): Promise<void> {
   if (Object.keys(values).length === 0) {
     await deleteUserCredential(deps.db, target.connectorId, target.userId);
     return;
   }
   const ciphertext = deps.secrets.encrypt(JSON.stringify(values));
-  await upsertUserCredential(deps.db, { ...target, ciphertext });
+  await upsertUserCredential(deps.db, { ...target, ciphertext, account: account ?? null });
 }

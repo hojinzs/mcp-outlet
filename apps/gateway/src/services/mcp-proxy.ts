@@ -201,12 +201,17 @@ export function createMcpProxy(deps: McpProxyDeps) {
     try {
       const credentials = await loadCredentials(deps, connector.id, endpoint.ownerId);
       response = await runtimeFor(deps.runtimes, connector.manifest).forward(
-        { manifest: connector.manifest, credentials },
+        {
+          manifest: connector.manifest,
+          credentials,
+          credentialRef: { connectorId: connector.id, userId: endpoint.ownerId },
+        },
         {
           method: request.method,
           headers: pickHeaders((name) => request.headers[name], REQUEST_HEADERS),
           body: request.method === 'POST' ? request.body?.raw : undefined,
           signal: request.signal,
+          adminUrl: adminUrl(endpoint.id),
         },
       );
     } catch (error) {
