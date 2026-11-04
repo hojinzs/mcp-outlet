@@ -15,7 +15,8 @@ export async function completeLogin(
   claims: JWTPayload & { sub: string },
   options: { policy: AccessPolicy; ttlHours: number; now: Date },
 ): Promise<LoginResult> {
-  const email = typeof claims.email === 'string' ? claims.email : null;
+  // 이메일이 없는 IdP 계정은 빈 문자열을 보내기도 한다
+  const email = typeof claims.email === 'string' && claims.email !== '' ? claims.email : null;
   const groups = extractGroups(claims, options.policy.groupsClaim);
   const decision = decideAccess(groups, options.policy);
   if (!decision.allowed) return { kind: 'denied', email };

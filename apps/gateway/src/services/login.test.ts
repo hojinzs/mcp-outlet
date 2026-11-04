@@ -31,6 +31,12 @@ describe.skipIf(!testDatabaseUrl)('completeLogin (DB)', () => {
     expect(user?.lastLoginAt).toEqual(now);
   });
 
+  it('빈 email 클레임은 없는 것으로 저장한다', async () => {
+    const sub = `sub-${randomUUID()}`;
+    await completeLogin(db, { sub, email: '', groups: ['Users'] }, options);
+    expect((await userBySub(sub))?.email).toBeNull();
+  });
+
   it('허용 그룹 밖이면 사용자도 세션도 만들지 않는다', async () => {
     const sub = `sub-${randomUUID()}`;
     const result = await completeLogin(db, { sub, email: 'x@test', groups: ['Other'] }, options);
