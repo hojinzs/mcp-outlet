@@ -36,6 +36,9 @@ export const connectionTestResult = pgEnum('connection_test_result', [
   'not_mcp',
   'timeout',
   'redirect',
+  // 내장 커넥터: 계정에 권한이 없거나 API가 꺼짐, 업스트림이 처리하지 못함
+  'permission_denied',
+  'upstream_error',
 ]);
 export const credentialScope = pgEnum('credential_scope', ['global', 'user']);
 export const callResult = pgEnum('call_result', ['ok', 'error', 'denied']);
@@ -123,6 +126,8 @@ export const credentials = pgTable(
     userId: uuid().references(() => users.id, { onDelete: 'cascade' }),
     // 필드 값(업스트림 OAuth면 refresh token 포함)을 JSON으로 묶어 암호화한 값
     ciphertext: text().notNull(),
+    // 연결된 업스트림 계정(OAuth 계정 이메일·서비스 계정 client_email). 비밀값이 아니라 화면에 보여준다
+    account: text(),
     expiresAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
