@@ -2,6 +2,14 @@ import { desc, eq } from 'drizzle-orm';
 import type { DbOrTx } from '../client.ts';
 import { auditLogs } from '../schema.ts';
 
+// 툴 호출 하나. 인자·응답 본문은 받지도 않는다 (F-UI-03)
+export async function insertAuditLog(
+  db: DbOrTx,
+  entry: Omit<typeof auditLogs.$inferInsert, 'id'>,
+): Promise<void> {
+  await db.insert(auditLogs).values(entry);
+}
+
 // 엔드포인트 상세의 최근 호출 (SCR-EP-03). 소유자 확인은 호출하는 쪽에서 끝낸다
 export async function listRecentCalls(db: DbOrTx, endpointId: string, limit: number) {
   return db

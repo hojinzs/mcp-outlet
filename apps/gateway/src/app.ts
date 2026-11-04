@@ -13,9 +13,11 @@ import { registerAuthRoutes } from './routes/auth.ts';
 import { registerConnectorRoutes } from './routes/connectors.ts';
 import { registerEndpointRoutes } from './routes/endpoints.ts';
 import { registerHealth } from './routes/health.ts';
+import { registerMcpRoutes } from './routes/mcp.ts';
 import { registerMe } from './routes/me.ts';
 import { createRuntimes } from './runtimes/index.ts';
 import type { EndpointServiceDeps } from './services/endpoints.ts';
+import { createMcpProxy } from './services/mcp-proxy.ts';
 import { createUpstreamFetch } from './upstream/safe-fetch.ts';
 
 // 테스트에서 IdP 통신과 시계를 바꿔 끼운다
@@ -40,6 +42,8 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
   const app = Fastify({
     logger: { level: config.LOG_LEVEL, serializers: logSerializers },
     trustProxy: config.TRUST_PROXY,
+    // MCP SSE 스트림은 오래 열려 있으므로 종료할 때 기다리지 않고 끊는다. 클라이언트가 다시 붙는다
+    forceCloseConnections: true,
   });
 
   registerErrorHandlers(app);
@@ -77,6 +81,19 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
     },
     { prefix: '/api' },
   );
+
+  await registerMcpRoutes(app, {
+    db,
+    oidc,
+    proxy: createMcpProxy({ ...services, log: app.log }),
+    policy: {
+      groupsClaim: config.OIDC_GROUPS_CLAIM,
+      loginGroups: config.OIDC_LOGIN_GROUPS,
+      adminGroups: config.OIDC_ADMIN_GROUPS,
+    },
+    publicBaseUrl: config.PUBLIC_BASE_URL,
+    audience: config.OIDC_AUDIENCE,
+  });
 
   const serveAdmin = await registerAdminUi(app, config);
   app.setNotFoundHandler((request, reply) => {

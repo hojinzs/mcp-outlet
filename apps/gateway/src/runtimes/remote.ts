@@ -11,6 +11,7 @@ import type {
   ConnectionTest,
   ConnectionTestResult,
   ConnectorRuntime,
+  ForwardRequest,
   RuntimeConnector,
 } from './types.ts';
 
@@ -110,5 +111,15 @@ export function createRemoteRuntime(deps: RemoteRuntimeDeps): ConnectorRuntime {
     }
   }
 
-  return { testConnection };
+  // 클라이언트의 Authorization은 화이트리스트에서 빠지고 업스트림 자격증명으로 바뀐다 (F-RUN-01)
+  async function forward(connector: RuntimeConnector, request: ForwardRequest): Promise<Response> {
+    return deps.fetch(remoteUrl(connector), {
+      method: request.method,
+      headers: { ...request.headers, ...upstreamAuthHeaders(connector) },
+      body: request.body,
+      signal: request.signal,
+    });
+  }
+
+  return { testConnection, forward };
 }

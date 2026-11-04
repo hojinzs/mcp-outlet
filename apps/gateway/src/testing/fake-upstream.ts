@@ -10,7 +10,10 @@ export const FAKE_UPSTREAM_TOKEN = 'upstream-secret-token';
 export const FAKE_TOOLS = ['read_item', 'delete_item', 'slow_count'] as const;
 
 function createMcpServer(): McpServer {
-  const server = new McpServer({ name: 'fake-upstream', version: '1.0.0' });
+  const server = new McpServer(
+    { name: 'fake-upstream', version: '1.0.0' },
+    { capabilities: { logging: {} } },
+  );
   server.registerTool(
     'read_item',
     {
@@ -51,9 +54,14 @@ function createMcpServer(): McpServer {
 export async function startFakeUpstream(options: { token?: string; jsonResponse?: boolean } = {}) {
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const received: IncomingHttpHeaders[] = [];
+  // 응답을 끝내기 전에 연결이 끊긴 요청 수 (abort 전파 확인용)
+  const stats = { closedEarly: 0 };
 
   const http = createServer(async (req, res) => {
     received.push(req.headers);
+    res.on('close', () => {
+      if (!res.writableFinished) stats.closedEarly += 1;
+    });
     if (req.url === '/moved') {
       res.writeHead(307, { location: '/mcp' }).end();
       return;
@@ -96,6 +104,7 @@ export async function startFakeUpstream(options: { token?: string; jsonResponse?
     url: `http://127.0.0.1:${port}/mcp`,
     origin: `http://127.0.0.1:${port}`,
     received,
+    stats,
     sessions: transports,
     async close() {
       for (const transport of transports.values()) await transport.close();

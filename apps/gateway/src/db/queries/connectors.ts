@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { DbOrTx } from '../client.ts';
 import { connectors, credentials, endpoints } from '../schema.ts';
 
@@ -69,4 +69,23 @@ export async function deleteConnector(db: DbOrTx, ownerId: string, id: string): 
     .where(and(eq(connectors.id, id), eq(connectors.ownerId, ownerId)))
     .returning({ id: connectors.id });
   return deleted.length > 0;
+}
+
+// MCP 호출 결과로 정상·오류를 오간다. pending·reauth_required는 호출 결과로 바꾸지 않고,
+// 같은 값이면 쓰지 않는다. 목록 정렬이 바뀌지 않게 updatedAt은 그대로 둔다
+export async function setConnectorHealth(
+  db: DbOrTx,
+  id: string,
+  status: 'ok' | 'error',
+): Promise<void> {
+  await db
+    .update(connectors)
+    .set({ status, updatedAt: connectors.updatedAt })
+    .where(
+      and(
+        eq(connectors.id, id),
+        inArray(connectors.status, ['ok', 'error']),
+        ne(connectors.status, status),
+      ),
+    );
 }
