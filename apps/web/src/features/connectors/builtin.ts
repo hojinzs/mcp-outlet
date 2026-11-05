@@ -131,16 +131,19 @@ const unpickableReasons: Record<Exclude<Connector['status'], 'ok'>, string> = {
 };
 
 // 고를 수 없는 커넥터의 사유와 고칠 곳. 엔드포인트가 있으면 그 상세(재테스트·재연결)로,
-// 없으면 엔드포인트 목록의 "엔드포인트 없는 커넥터"로 보낸다 (SCR-EP-02, SCR-EP-01)
+// 없으면 엔드포인트 목록의 "엔드포인트 없는 커넥터"로 보낸다 (SCR-EP-02, SCR-EP-01).
+// endpointIds(커넥터 id → 엔드포인트 하나)를 아직 받지 못했으면 링크를 그리지 않는다
 export function unpickableGuide(
   connector: Connector,
-  endpointId: string | undefined,
+  endpointIds: ReadonlyMap<string, string> | undefined,
 ): UnpickableGuide | null {
   if (connector.disabledAt !== null) {
     return { reason: '관리자가 사용 중지한 커넥터입니다', link: null };
   }
   if (connector.status === 'ok') return null;
   const reason = unpickableReasons[connector.status];
+  if (endpointIds === undefined) return { reason, link: null };
+  const endpointId = endpointIds.get(connector.id);
   if (endpointId === undefined) {
     return { reason, link: { to: '/', label: '엔드포인트 없는 커넥터에서 정리하기' } };
   }

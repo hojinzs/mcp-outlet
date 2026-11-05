@@ -59,8 +59,8 @@ function ExistingConnectors({
 }: {
   connectors: readonly Connector[];
   serviceNames: ReadonlyMap<string, string>;
-  // 커넥터 id → 그 커넥터의 엔드포인트 하나. 고를 수 없는 커넥터를 고칠 상세로 보낸다
-  endpointIds: ReadonlyMap<string, string>;
+  // 커넥터 id → 그 커넥터의 엔드포인트 하나. 고를 수 없는 커넥터를 고칠 상세로 보낸다. 받기 전이면 undefined
+  endpointIds: ReadonlyMap<string, string> | undefined;
   picking: string | null;
   onPick: (connector: Connector) => void;
 }) {
@@ -68,7 +68,7 @@ function ExistingConnectors({
     <ul className="divide-y overflow-hidden rounded-lg border bg-background">
       {connectors.map((connector) => {
         const disabled = connector.disabledAt !== null;
-        const guide = unpickableGuide(connector, endpointIds.get(connector.id));
+        const guide = unpickableGuide(connector, endpointIds);
         return (
           <li
             key={connector.id}
@@ -181,7 +181,7 @@ export function ConnectorStep({
 }: {
   connectors: readonly Connector[];
   serviceNames: ReadonlyMap<string, string>;
-  endpointIds: ReadonlyMap<string, string>;
+  endpointIds: ReadonlyMap<string, string> | undefined;
   mode: ConnectorMode;
   onModeChange: (mode: ConnectorMode) => void;
   newKind: NewConnectorKind;

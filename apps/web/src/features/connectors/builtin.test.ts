@@ -132,21 +132,31 @@ describe('내장 서비스 목록', () => {
   });
 
   it('고를 수 없는 커넥터는 사유와 고칠 곳을 준다', () => {
-    const connector = { disabledAt: null, status: 'ok' } as Connector;
-    expect(unpickableGuide(connector, 'e1')).toBeNull();
-    expect(unpickableGuide({ ...connector, status: 'error' }, 'e1')?.link).toEqual({
+    const connector = { id: 'c1', disabledAt: null, status: 'ok' } as Connector;
+    const endpointIds = new Map([['c1', 'e1']]);
+    expect(unpickableGuide(connector, endpointIds)).toBeNull();
+    expect(unpickableGuide({ ...connector, status: 'error' }, endpointIds)?.link).toEqual({
       to: '/endpoints/e1',
       label: '상세에서 다시 테스트',
     });
-    expect(unpickableGuide({ ...connector, status: 'reauth_required' }, 'e1')?.link).toEqual({
-      to: '/endpoints/e1',
-      label: '상세에서 다시 연결',
-    });
+    expect(unpickableGuide({ ...connector, status: 'reauth_required' }, endpointIds)?.link).toEqual(
+      {
+        to: '/endpoints/e1',
+        label: '상세에서 다시 연결',
+      },
+    );
     // 엔드포인트가 없으면 목록의 "엔드포인트 없는 커넥터"로
-    expect(unpickableGuide({ ...connector, status: 'pending' }, undefined)?.link?.to).toBe('/');
+    expect(
+      unpickableGuide({ ...connector, id: 'c2', status: 'pending' }, endpointIds)?.link?.to,
+    ).toBe('/');
+    // 엔드포인트 목록을 받기 전에는 링크를 그리지 않는다
+    expect(unpickableGuide({ ...connector, status: 'error' }, undefined)).toEqual({
+      reason: expect.any(String),
+      link: null,
+    });
     // 관리자 사용 중지는 사용자가 고칠 수 없다
     expect(
-      unpickableGuide({ ...connector, disabledAt: '2026-11-01T00:00:00Z' }, 'e1')?.link,
+      unpickableGuide({ ...connector, disabledAt: '2026-11-01T00:00:00Z' }, endpointIds)?.link,
     ).toBeNull();
   });
 });
