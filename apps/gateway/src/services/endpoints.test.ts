@@ -95,7 +95,13 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
       allowedTools: ['read_item'],
       toolCounts: { allowed: 1, total: 3, new: 0 },
       missingTools: [],
-      connector: { name: 'Fake', runtime: 'remote', url: upstream.url },
+      connector: {
+        name: 'Fake',
+        runtime: 'remote',
+        url: upstream.url,
+        builtin: null,
+        disabledReason: null,
+      },
     });
     expect(created.tools.find((tool) => tool.name === 'read_item')).toMatchObject({
       allowed: true,
@@ -261,6 +267,9 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
       .set({ disabledAt: new Date(), disabledReason: 'abuse' })
       .where(eq(connectors.id, created.connector.id));
     expect(await status()).toBe('disabled');
+    // 사용자 목록에서 사유를 볼 수 있다 (SCR-ADM-04)
+    const [summary] = await listEndpoints(deps(), owner);
+    expect(summary?.connector.disabledReason).toBe('abuse');
   });
 
   it('마지막 엔드포인트를 지울 때만 커넥터도 함께 지운다', async () => {

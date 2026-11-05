@@ -76,6 +76,10 @@ function endpointSummary(
       name: manifest.name,
       runtime: connector.runtime,
       url: manifest.runtime === 'remote' ? manifest.url : null,
+      // 화면이 /api/builtins에서 서비스 이름을 찾는 key (SCR-EP-01 커넥터 열)
+      builtin: manifest.runtime === 'builtin' ? manifest.builtin : null,
+      // 관리자가 사용 중지했으면 사용자에게 사유를 보여준다 (SCR-ADM-04 사용 중지)
+      disabledReason: connector.disabledReason,
     },
     toolCounts: toolCounts(endpoint, connector),
     lastCalledAt: endpoint.lastCalledAt,

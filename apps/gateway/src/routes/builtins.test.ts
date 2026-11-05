@@ -137,6 +137,8 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     });
     expect(created.statusCode).toBe(201);
     const endpoint = created.json();
+    // 목록이 서비스 이름을 찾을 수 있게 builtin key를 준다 (SCR-EP-01)
+    expect(endpoint.connector).toMatchObject({ runtime: 'builtin', builtin: 'google-analytics' });
 
     // client_email만 보여주고 private key는 내려주지 않는다
     const connector = await app.inject({
