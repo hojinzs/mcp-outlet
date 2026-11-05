@@ -2,8 +2,10 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.ts';
+import { createSecretBox } from '../crypto/secrets.ts';
 import { deleteStalePendingConnectors } from '../db/queries/connectors.ts';
-import { auditLogs, connectors } from '../db/schema.ts';
+import { auditLogs, connectors, credentials } from '../db/schema.ts';
+import { CREDENTIAL_KEYS } from '../services/builtin-auth.ts';
 import { createLoggedInUser, TEST_GROUPS, testConfig } from '../testing/app.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
 import {
@@ -181,12 +183,17 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     expect(get.statusCode).toBe(405);
   });
 
-  async function startOAuth(user: LoggedIn, connectorId: string, returnTo: string) {
+  async function startOAuth(
+    user: LoggedIn,
+    connectorId: string,
+    returnTo: string,
+    client?: { clientId: string; clientSecret: string },
+  ) {
     const res = await app.inject({
       method: 'POST',
       url: `/api/connectors/${connectorId}/oauth/start`,
       cookies: user.cookies,
-      payload: { returnTo },
+      payload: { returnTo, ...(client ? { client } : {}) },
     });
     expect(res.statusCode).toBe(200);
     const cookie = res.cookies.find((item) => item.name === 'outlet_upstream');
@@ -576,6 +583,133 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
       payload: {},
     });
     expect(foreign.statusCode).toBe(404);
+  });
+
+  // 저장된 자격증명의 키 이름과 OAuth client id. 비밀값은 비교하지 않는다
+  async function storedCredential(connectorId: string) {
+    const secrets = createSecretBox({ current: testConfig().ENCRYPTION_KEY });
+    const [row] = await db
+      .select({ ciphertext: credentials.ciphertext })
+      .from(credentials)
+      .where(eq(credentials.connectorId, connectorId));
+    const values = JSON.parse(secrets.decrypt(row?.ciphertext ?? '')) as Record<string, string>;
+    return { keys: Object.keys(values).sort(), clientId: values[CREDENTIAL_KEYS.clientId] };
+  }
+
+  async function connectedOAuthEndpoint(user: LoggedIn) {
+    const connectorId = await pendingOAuthConnector(user);
+    const started = await startOAuth(user, connectorId, '/admin/');
+    await callback(user, started.cookie, {
+      code: google.consent(started.authorizationUrl.toString()),
+      state: started.authorizationUrl.searchParams.get('state') ?? '',
+    });
+    // 처음 연결은 화면의 연결 테스트가 끝나야 정상이 된다
+    const test = await app.inject({
+      method: 'POST',
+      url: `/api/connectors/${connectorId}/test`,
+      cookies: user.cookies,
+    });
+    expect(test.json().result).toBe('ok');
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/endpoints',
+      cookies: user.cookies,
+      payload: { name: 'GA', allowedTools: ['ga4_run_report'], connectorId },
+    });
+    expect(created.statusCode).toBe(201);
+    return { connectorId, endpointId: created.json().id as string };
+  }
+
+  it('다른 OAuth 앱으로 바꾸기: 동의 화면은 새 client_id를 쓰고, 교환에 실패하면 기존 앱을 그대로 둔다', async () => {
+    const user = await createLoggedInUser(db, now());
+    const { connectorId, endpointId } = await connectedOAuthEndpoint(user);
+    const returnTo = `/admin/endpoints/${endpointId}`;
+
+    // Google이 모르는 OAuth 앱으로 바꾸려 한 상황
+    const other = { clientId: 'other-client', clientSecret: 'other-secret' };
+    const started = await startOAuth(user, connectorId, returnTo, other);
+    expect(started.authorizationUrl.searchParams.get('client_id')).toBe('other-client');
+    const failed = await callback(user, started.cookie, {
+      code: google.consent(started.authorizationUrl.toString()),
+      state: started.authorizationUrl.searchParams.get('state') ?? '',
+    });
+    expect(failed.headers.location).toBe(`${returnTo}?connect_error=failed`);
+    expect((await storedCredential(connectorId)).clientId).toBe(FAKE_OAUTH_CLIENT.clientId);
+    const ok = await mcpCall(user, endpointId, runReport);
+    expect(ok.json().result.isError).toBeUndefined();
+
+    // 새 앱을 주지 않으면 저장된 앱으로 다시 동의한다
+    const again = await startOAuth(user, connectorId, returnTo);
+    expect(again.authorizationUrl.searchParams.get('client_id')).toBe(FAKE_OAUTH_CLIENT.clientId);
+  });
+
+  it('인증 방식 전환: 서비스 계정 → OAuth(새 앱으로 동의) → 서비스 계정', async () => {
+    const user = await createLoggedInUser(db, now());
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/endpoints',
+      cookies: user.cookies,
+      payload: {
+        name: 'GA',
+        allowedTools: ['ga4_run_report'],
+        connector: serviceAccountConnector(),
+      },
+    });
+    const endpoint = created.json();
+    const connectorId = endpoint.connector.id as string;
+    const returnTo = `/admin/endpoints/${endpoint.id}`;
+    const view = async () =>
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/connectors/${connectorId}`,
+          cookies: user.cookies,
+        })
+      ).json();
+
+    // 서비스 계정 커넥터에는 저장된 OAuth 앱이 없으므로 새 앱을 함께 줘야 한다
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/connectors/${connectorId}/oauth/start`,
+      cookies: user.cookies,
+      payload: { returnTo },
+    });
+    expect(missing.statusCode).toBe(400);
+
+    const started = await startOAuth(user, connectorId, returnTo, FAKE_OAUTH_CLIENT);
+    const connected = await callback(user, started.cookie, {
+      code: google.consent(started.authorizationUrl.toString()),
+      state: started.authorizationUrl.searchParams.get('state') ?? '',
+    });
+    expect(connected.headers.location).toBe(`${returnTo}?connected=1`);
+    expect(await view()).toMatchObject({
+      status: 'ok',
+      auth: { type: 'oauth2' },
+      credential: { account: FAKE_GOOGLE_EMAIL },
+      lastTestResult: 'ok',
+    });
+    expect((await storedCredential(connectorId)).keys).not.toContain(
+      CREDENTIAL_KEYS.serviceAccountKey,
+    );
+    expect((await mcpCall(user, endpoint.id, runReport)).json().result.isError).toBeUndefined();
+
+    // 다시 서비스 계정으로: 키가 연결 테스트를 통과하면 OAuth 자격증명을 모두 바꾼다
+    const before = google.stats.serviceAccountTokens;
+    const switched = await app.inject({
+      method: 'PATCH',
+      url: `/api/connectors/${connectorId}`,
+      cookies: user.cookies,
+      payload: { auth: { type: 'service_account', key: google.serviceAccountKey } },
+    });
+    expect(switched.statusCode).toBe(200);
+    expect(switched.json()).toMatchObject({
+      status: 'ok',
+      auth: { type: 'service_account' },
+      credential: { account: FAKE_SERVICE_ACCOUNT_EMAIL },
+    });
+    expect((await storedCredential(connectorId)).keys).toEqual([CREDENTIAL_KEYS.serviceAccountKey]);
+    expect((await mcpCall(user, endpoint.id, runReport)).json().result.isError).toBeUndefined();
+    expect(google.stats.serviceAccountTokens).toBeGreaterThan(before);
   });
 
   it('서비스 계정 키 교체: 연결 테스트를 통과해야 저장하고 키는 응답에 없다', async () => {
