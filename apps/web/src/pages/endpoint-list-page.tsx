@@ -21,6 +21,7 @@ import {
   type ReauthBanner,
   reauthBanners,
 } from '../features/endpoints/status.ts';
+import { HomeConnectNotice } from './home-connect-notice.tsx';
 
 // SCR-EP-01 엔드포인트 목록 (홈). 정렬은 gateway가 최근 수정순으로 준다.
 // 상태 토글과 삭제는 실수를 막기 위해 상세 화면에서만 한다
@@ -237,6 +238,7 @@ export function EndpointListPage() {
           </Link>
         </Button>
       </div>
+      <HomeConnectNotice />
       {reauthBanners(endpoints.data, serviceAccountIds).map((banner) => (
         <Banner key={banner.connectorId} banner={banner} />
       ))}

@@ -66,22 +66,37 @@ export function connectorTestMessage(runtime: ConnectorRuntime, result: string):
 }
 
 // 업스트림 동의 뒤 gateway가 returnTo에 붙여 돌려보내는 결과
-export type ConnectOutcome = 'connected' | 'cancelled' | 'failed' | 'test_failed';
+export type ConnectOutcome = 'connected' | 'cancelled' | 'failed' | 'test_failed' | 'expired';
 
 export function connectOutcome(params: URLSearchParams): ConnectOutcome | null {
   if (params.get('connected') === '1') return 'connected';
   const error = params.get('connect_error');
   if (error === null) return null;
-  if (error === 'cancelled' || error === 'test_failed') return error;
+  if (error === 'cancelled' || error === 'test_failed' || error === 'expired') return error;
   return 'failed';
 }
+
+// gateway의 업스트림 state 쿠키 수명(UPSTREAM_STATE_TTL_MS)
+const CONNECT_TIME_LIMIT = '10분';
 
 export const connectErrorMessages: Record<Exclude<ConnectOutcome, 'connected'>, string> = {
   cancelled: '계정 연결을 취소했습니다',
   failed: '계정 연결에 실패했습니다. Client ID·Secret과 리디렉션 URI를 확인하세요',
   // 재연결(SCR-EP-03): 토큰은 받았지만 tools/list가 실패해 커넥터가 오류 상태로 남음
   test_failed: '계정은 연결했지만 연결 테스트에 실패했습니다. 연결한 계정의 권한을 확인하세요',
+  expired: `계정 연결 시간(${CONNECT_TIME_LIMIT})이 지나 연결을 마치지 못했습니다. 다시 연결하세요`,
 };
+
+// 홈(SCR-EP-01)에 온 연결 결과 안내. state 쿠키가 만료(expired)되었거나 맞지 않으면 gateway는
+// 돌아갈 화면을 몰라 홈으로 보낸다. 어느 커넥터인지 모르므로 다시 연결할 곳을 함께 알린다
+export function homeConnectNotice(outcome: ConnectOutcome | null): string | null {
+  if (outcome === null || outcome === 'connected') return null;
+  const retry = '엔드포인트 상세나 추가 화면에서 다시 연결하세요';
+  if (outcome === 'expired') {
+    return `계정 연결 시간(${CONNECT_TIME_LIMIT})이 지나 연결을 마치지 못했습니다. ${retry}`;
+  }
+  return `계정 연결을 마치지 못했습니다. ${retry}`;
+}
 
 // 새로고침해도 결과를 다시 처리하지 않게 쿼리에서 지운다
 export function withoutConnectOutcome(params: URLSearchParams): URLSearchParams {
