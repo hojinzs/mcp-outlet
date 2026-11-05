@@ -157,7 +157,7 @@ export function EndpointNewPage() {
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [resume, setResume] = useState<Resume | null>(null);
   // "Google로 연결"로 먼저 저장한 커넥터. 동의로 가지 못했으면 다시 누를 때 새로 만들지 않고 이 커넥터를 쓴다
-  const [draftConnectorId, setDraftConnectorId] = useState<string | null>(null);
+  const [draftConnector, setDraftConnector] = useState<{ id: string; name: string } | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
   // 처음에는 아무것도 선택하지 않는다. 쓰기 툴이 실수로 노출되지 않게 하기 위해서다
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -211,10 +211,17 @@ export function EndpointNewPage() {
         clientId: input.auth.clientId,
         clientSecret: input.auth.clientSecret,
       };
-      // 이미 저장한 커넥터는 지금 입력한 OAuth 앱으로 동의를 받는다
-      if (draftConnectorId) return { connectorId: draftConnectorId, client };
+      // 이미 저장한 커넥터는 지금 입력한 이름과 OAuth 앱으로 동의를 받는다
+      if (draftConnector) {
+        if (draftConnector.name !== input.name) {
+          await requests.updateConnector(draftConnector.id, { name: input.name });
+          setDraftConnector({ id: draftConnector.id, name: input.name });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.connectors });
+        }
+        return { connectorId: draftConnector.id, client };
+      }
       const connector = await requests.createOAuthConnector(input);
-      setDraftConnectorId(connector.id);
+      setDraftConnector({ id: connector.id, name: connector.name });
       void queryClient.invalidateQueries({ queryKey: queryKeys.connectors });
       return { connectorId: connector.id, client: undefined };
     },
@@ -233,7 +240,7 @@ export function EndpointNewPage() {
   function changeBuiltinForm(next: BuiltinFormState) {
     if (next.builtin !== builtinForm.builtin) {
       setTestFailure(null);
-      setDraftConnectorId(null);
+      setDraftConnector(null);
       oauthCreate.reset();
       oauth.start.reset();
     }
