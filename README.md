@@ -88,7 +88,7 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 - **인증**: `Authorization: Bearer <IdP access token>`. 서명(JWKS)·iss·aud(`OIDC_AUDIENCE`, 기본 client_id)·exp를 확인한다. 토큰이 없거나 틀리면 엔드포인트가 있든 없든 401과 `WWW-Authenticate: Bearer resource_metadata="{PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/c/{id}/mcp"`를 준다. 메타데이터(RFC 9728)는 `resource`·`authorization_servers`(IdP issuer)·`scopes_supported`를 담는다.
 - **인가**: 요청마다 토큰의 groups로 로그인 허용 그룹을 다시 확인하고(아니면 403) 사용자의 email·groups를 갱신한다. 그룹에서 빠졌으면 role을 user로 내리고 관리 UI 세션을 모두 지운다. sub가 엔드포인트 소유자가 아니면 없는 엔드포인트와 같은 404, 엔드포인트 비활성·커넥터 사용 중지는 403이다.
 - **허용목록**: `tools/list` 응답에서 허용 밖 툴을 빼고, 허용 밖 `tools/call`은 업스트림에 보내지 않고 JSON-RPC 오류(-32602)로 답한다. 배치에 허용 밖 호출이 섞이면 배치 전체를 거부한다.
-- **중계**: 요청 헤더는 `accept`·`content-type`·`mcp-session-id`·`mcp-protocol-version`·`last-event-id`만 넘기고, Authorization은 커넥터 자격증명(헤더 이름·접두어 설정)으로 바꾼다. SSE는 이벤트 단위로 바로 넘기고, 클라이언트가 끊으면 업스트림 요청도 끊는다. 업스트림 메시지 하나(JSON 본문, 끝나지 않은 SSE 이벤트)는 8MiB까지만 받고 넘으면 업스트림을 끊는다. `tools/list` 결과는 요청 id가 아니라 결과 모양으로 알아보고 걸러 GET 스트림 재개(`Last-Event-ID`)로 다시 온 목록에도 허용목록을 적용한다. 업스트림 실패는 원문 없이 JSON-RPC 오류(-32000)와 관리 화면 링크로 정리한다.
+- **중계**: 요청 헤더는 `accept`·`content-type`·`mcp-session-id`·`mcp-protocol-version`·`last-event-id`만 넘기고, Authorization은 커넥터 자격증명(헤더 이름·접두어 설정)으로 바꾼다. SSE는 이벤트 단위로 바로 넘기고, 클라이언트가 끊으면 업스트림 요청도 끊는다. 업스트림 메시지 하나(JSON 본문, 끝나지 않은 SSE 이벤트)는 8MiB까지만 받고 넘으면 업스트림을 끊는다. JSON 본문은 다 받을 때까지 `UPSTREAM_TIMEOUT_MS`를 넘겨도 끊는다(SSE 스트림은 제외). `tools/list` 결과는 요청 id가 아니라 결과 모양으로 알아보고 걸러 GET 스트림 재개(`Last-Event-ID`)로 다시 온 목록에도 허용목록을 적용한다. 업스트림 실패는 원문 없이 JSON-RPC 오류(-32000)와 관리 화면 링크로 정리한다.
 - **감사 로그**: `tools/call`마다 `audit_logs`에 사용자·엔드포인트·커넥터·툴 이름·결과(ok·error·denied)·소요시간만 남긴다. 허용목록 밖 호출과 사용 중지된 커넥터로 온 호출은 denied다. `lastCalledAt`은 최대 1분에 한 번 갱신한다.
 - **보관**: 감사 로그는 `AUDIT_RETENTION_DAYS`(기본 90일), 작업 기록(`activity_logs`)은 `ACTIVITY_RETENTION_DAYS`(기본 365일)가 지나면 gateway가 기동할 때와 하루 한 번 지운다. 0이면 지우지 않는다. 같은 작업이 만료된 관리 UI 세션과 24시간 넘게 엔드포인트 없이 "연결 중"(`pending`)으로 남은 OAuth 커넥터도 지운다(`services/retention.ts`). 로그에는 지운 건수만 남긴다.
 - **사용자 원격 URL**(F-CON-06): https만 받고, DNS 해석 결과가 하나라도 사설·loopback·link-local·CGNAT·메타데이터·ULA 등이면 거부하며, 검사한 주소로만 연결하고 redirect는 따르지 않는다. `UPSTREAM_ALLOW_CIDRS` 대역만 예외이고 그 대역은 http도 받는다. 업스트림 응답 헤더까지 `UPSTREAM_TIMEOUT_MS`를 기다린다.
@@ -119,7 +119,7 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 | GET    | `/api/endpoints/:id/connect-info` | 엔드포인트 URL·client_id·secret 설정 여부                                                           |
 | GET    | `/api/connect-secret`             | 공유 Client Secret. 볼 때마다 `activity_logs`에 `client_secret.view`(값 없음). Public client면 404  |
 
-연결 테스트 실패는 `connection_test_result` 분류(`private_address`·`unreachable`·`auth_failed`·`not_mcp`·`timeout`·`redirect`, 내장 커넥터는 `permission_denied`·`upstream_error`도)로만 준다. 저장 흐름에서 실패하면 422 `connection_test_failed`와 `error.details.result`, 툴 목록이 바뀌었으면 409 `tools_changed`, 관리자가 사용 중지한 커넥터로 엔드포인트를 만들면 409 `connector_disabled`, 상한(`MAX_CONNECTORS_PER_USER`·`MAX_ENDPOINTS_PER_USER`, 기본 20·50)을 넘으면 409 `limit_exceeded`다.
+연결 테스트 실패는 `connection_test_result` 분류(`private_address`·`unreachable`·`auth_failed`·`not_mcp`·`timeout`·`redirect`, 내장 커넥터는 `permission_denied`·`upstream_error`도)로만 준다. 저장 흐름에서 실패하면 422 `connection_test_failed`와 `error.details.result`, 툴 목록이 바뀌었으면 409 `tools_changed`, 관리자가 사용 중지한 커넥터로 엔드포인트를 만들면 409 `connector_disabled`, 연결 중·재연결 필요·오류 커넥터면 409 `connector_not_ready`, 상한(`MAX_CONNECTORS_PER_USER`·`MAX_ENDPOINTS_PER_USER`, 기본 20·50)을 넘으면 409 `limit_exceeded`다.
 
 ### 관리자 API
 
