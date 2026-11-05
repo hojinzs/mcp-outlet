@@ -33,6 +33,8 @@ export async function createFakeGoogle(options: { now: () => Date }) {
   const stats = { refreshes: 0, serviceAccountTokens: 0, apiCalls: [] as string[] };
   // 갱신 경합을 재현하려고 토큰 응답을 늦출 수 있다
   let tokenDelayMs = 0;
+  // 연결한 계정에 GA·Search Console 권한이 없는 상황
+  let apiDenied = false;
 
   function issueRefresh(): string {
     const token = `1//${randomToken()}`;
@@ -123,6 +125,7 @@ export async function createFakeGoogle(options: { now: () => Date }) {
       return json({ error: { code: 401, status: 'UNAUTHENTICATED' } }, 401);
     }
     stats.apiCalls.push(`${url.hostname}${url.pathname}`);
+    if (apiDenied) return json({ error: { code: 403, status: 'PERMISSION_DENIED' } }, 403);
     if (url.pathname === '/v1beta/accountSummaries') {
       return json({
         accountSummaries: [
@@ -162,6 +165,9 @@ export async function createFakeGoogle(options: { now: () => Date }) {
     revokeRefreshTokens: () => refreshTokens.clear(),
     setTokenDelay: (ms: number) => {
       tokenDelayMs = ms;
+    },
+    setApiDenied: (denied: boolean) => {
+      apiDenied = denied;
     },
   };
 }

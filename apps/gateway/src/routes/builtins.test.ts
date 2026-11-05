@@ -306,6 +306,37 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     expect(recovered.json().result.isError).toBeUndefined();
   });
 
+  it('OAuth 재연결: 연결 테스트를 통과해야 상태를 ok로 바꾼다', async () => {
+    const user = await createLoggedInUser(db, now());
+    const connectorId = await pendingOAuthConnector(user);
+    const reconnect = async () => {
+      const started = await startOAuth(user, connectorId, '/admin/');
+      const res = await callback(user, started.cookie, {
+        code: google.consent(started.authorizationUrl.toString()),
+        state: started.authorizationUrl.searchParams.get('state') ?? '',
+      });
+      const [row] = await db
+        .select({ status: connectors.status })
+        .from(connectors)
+        .where(eq(connectors.id, connectorId));
+      return { location: res.headers.location, status: row?.status };
+    };
+    // 처음 연결은 화면의 연결 테스트가 끝날 때까지 연결 중이다
+    expect(await reconnect()).toEqual({ location: '/admin/?connected=1', status: 'pending' });
+    await db
+      .update(connectors)
+      .set({ status: 'reauth_required' })
+      .where(eq(connectors.id, connectorId));
+
+    google.setApiDenied(true);
+    const denied = await reconnect();
+    google.setApiDenied(false);
+    expect(denied.location).toBe('/admin/?connect_error=test_failed');
+    expect(denied.status).not.toBe('ok');
+
+    expect(await reconnect()).toEqual({ location: '/admin/?connected=1', status: 'ok' });
+  });
+
   it('OAuth 콜백: 동의 취소, state 불일치, 다른 사용자 세션은 연결하지 않는다', async () => {
     const user = await createLoggedInUser(db, now());
     const connectorId = await pendingOAuthConnector(user);

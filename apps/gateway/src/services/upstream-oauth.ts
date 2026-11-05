@@ -22,6 +22,7 @@ import {
   type ConnectorServiceDeps,
   type ConnectorView,
   getConnector,
+  retestConnector,
 } from './connectors.ts';
 import { loadCredentials, saveCredentials } from './credentials.ts';
 import { ServiceError } from './errors.ts';
@@ -45,7 +46,8 @@ export type OAuthConnectorInput = {
 // 다음 생성 때와 보관 주기 작업(services/retention.ts)에서 지운다
 export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
-export type UpstreamOAuthResult = 'connected' | 'state_mismatch' | 'failed';
+// test_failed: 재연결로 받은 토큰은 저장했지만 연결 테스트에 실패해 커넥터가 오류 상태로 남음
+export type UpstreamOAuthResult = 'connected' | 'state_mismatch' | 'failed' | 'test_failed';
 
 function oauthBuiltin(deps: Pick<ConnectorServiceDeps, 'builtins'>, key: string) {
   const builtin = deps.builtins.get(key);
@@ -156,10 +158,9 @@ export async function completeUpstreamOAuth(
   if (!refreshToken) return 'failed';
 
   await deps.db.transaction(async (tx) => {
+    // 상태는 여기서 바꾸지 않는다. 처음 연결이면 화면의 연결 테스트가 끝날 때까지 "연결 중"이다
     await updateConnector(tx, sessionUserId, connector.id, {
       manifest: builtinManifest(builtin, connector.manifest.name, method),
-      // 처음 연결이면 화면의 연결 테스트가 끝날 때까지 "연결 중"으로 둔다
-      status: connector.status === 'pending' ? 'pending' : 'ok',
     });
     await saveCredentials(
       { db: tx, secrets: deps.secrets },
@@ -174,5 +175,8 @@ export async function completeUpstreamOAuth(
       token.email ?? null,
     );
   });
-  return 'connected';
+  if (connector.status === 'pending') return 'connected';
+  // 재연결은 연결 테스트(tools/list)를 통과해야 상태를 ok로 바꾼다 (F-CON-05)
+  const test = await retestConnector(deps, sessionUserId, connector.id);
+  return test.result === 'ok' ? 'connected' : 'test_failed';
 }

@@ -17,8 +17,8 @@ import { completeUpstreamOAuth, type UpstreamOAuthDeps } from '../services/upstr
 
 export type UpstreamAuthRouteDeps = { config: Config; db: Db; services: UpstreamOAuthDeps };
 
-// SCR-EP-02 오류: 동의 취소 / 토큰 교환 실패
-type ConnectError = 'cancelled' | 'failed';
+// SCR-EP-02 오류: 동의 취소 / 토큰 교환 실패 / 재연결 뒤 연결 테스트 실패(SCR-EP-03)
+type ConnectError = 'cancelled' | 'failed' | 'test_failed';
 
 const callbackQuery = z.object({
   code: z.string().min(1).optional(),
@@ -61,6 +61,7 @@ export function registerUpstreamAuthRoutes(app: FastifyInstance, deps: UpstreamA
     if (!user) return fail('failed', 'no_session');
 
     const result = await completeUpstreamOAuth(services, user.id, state, query.data.code);
+    if (result === 'test_failed') return fail('test_failed', result);
     if (result !== 'connected') return fail('failed', result);
     return reply.redirect(withParam(returnTo, 'connected', '1'));
   });
