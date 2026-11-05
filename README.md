@@ -58,6 +58,10 @@ OAuth2/OIDC provider 하나를 로컬·개발·프로덕션과 Claude·ChatGPT�
 | Scopes       | openid, email, profile(groups 클레임 포함), offline_access          |
 | Access token | 30분, refresh token 30일                                            |
 
+관리 UI 로그인 scope는 `OIDC_SCOPES`(공백 구분, 기본 `openid email profile`)로 바꾼다. groups를 별도 scope로 주는 IdP는 여기에 더한다. 보호 리소스 메타데이터의 `scopes_supported`도 이 값에 `offline_access`를 더해 알리므로 MCP 클라이언트가 같은 scope를 요청한다.
+
+access token에 groups 클레임이 아예 없는 IdP에서는 MCP 요청을 마지막 관리 UI 로그인 때 저장한 groups로 판정하고 경고 로그를 남긴다(관리 UI에 로그인한 적이 없으면 그룹 밖). 이 경우 IdP에서 그룹을 빼도 그 사용자가 관리 UI에 다시 로그인하기 전까지 MCP 접근이 남는다. 클레임이 빈 배열이면 그룹 밖으로 본다.
+
 Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outlet Admins` 그룹만 바인딩해 그 밖의 사용자는 토큰을 받지 못하게 한다.
 
 | 용도                      | 모드   | URI                                                                          |
@@ -182,14 +186,15 @@ TLS와 도메인은 외부 리버스 프록시가 맡는다. SSE가 끊기지 �
 
 설정은 모두 환경변수로 받고(`apps/gateway/src/config.ts`, 예시는 `.env.example`) 다니웍스 고정값은 코드에 없다. 운영에서 자주 보는 값:
 
-| 환경변수                                           | 기본값   | 내용                                                          |
-| -------------------------------------------------- | -------- | ------------------------------------------------------------- |
-| `OIDC_LOGIN_GROUPS` / `OIDC_ADMIN_GROUPS`          | - / 필수 | 로그인 허용 그룹(비우면 IdP 로그인 성공자 전부) / 관리자 그룹 |
-| `MAX_CONNECTORS_PER_USER`                          | 20       | 사용자당 커넥터 상한                                          |
-| `MAX_ENDPOINTS_PER_USER`                           | 50       | 사용자당 엔드포인트 상한                                      |
-| `UPSTREAM_TIMEOUT_MS`                              | 30000    | 업스트림(원격 MCP·Google API) 호출 상한                       |
-| `UPSTREAM_ALLOW_CIDRS`                             | (비움)   | 사설 주소 차단 예외 대역. 운영에서는 비운다                   |
-| `AUDIT_RETENTION_DAYS` / `ACTIVITY_RETENTION_DAYS` | 90 / 365 | 감사 로그·작업 기록 보관 일수. 0이면 지우지 않는다            |
-| `SESSION_TTL_HOURS`                                | 12       | 관리 UI 세션 수명                                             |
+| 환경변수                                           | 기본값                 | 내용                                                          |
+| -------------------------------------------------- | ---------------------- | ------------------------------------------------------------- |
+| `OIDC_LOGIN_GROUPS` / `OIDC_ADMIN_GROUPS`          | - / 필수               | 로그인 허용 그룹(비우면 IdP 로그인 성공자 전부) / 관리자 그룹 |
+| `OIDC_SCOPES`                                      | `openid email profile` | 로그인 scope. 공백 구분, `openid` 필수. IdP 설정 참고         |
+| `MAX_CONNECTORS_PER_USER`                          | 20                     | 사용자당 커넥터 상한                                          |
+| `MAX_ENDPOINTS_PER_USER`                           | 50                     | 사용자당 엔드포인트 상한                                      |
+| `UPSTREAM_TIMEOUT_MS`                              | 30000                  | 업스트림(원격 MCP·Google API) 호출 상한                       |
+| `UPSTREAM_ALLOW_CIDRS`                             | (비움)                 | 사설 주소 차단 예외 대역. 운영에서는 비운다                   |
+| `AUDIT_RETENTION_DAYS` / `ACTIVITY_RETENTION_DAYS` | 90 / 365               | 감사 로그·작업 기록 보관 일수. 0이면 지우지 않는다            |
+| `SESSION_TTL_HOURS`                                | 12                     | 관리 UI 세션 수명                                             |
 
 개발 환경은 Coolify(development 환경)에 Dockerfile `docker/gateway.Dockerfile`로 배포한다. push 자동 배포는 없고 `.claude/skills/coolify/SKILL.md`의 명령으로 배포한다.
