@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # DB 테스트용 Postgres. 값은 모두 CI 전용 테스트 값이다(비밀 아님)
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: outlet
+          POSTGRES_PASSWORD: outlet-ci
+          POSTGRES_DB: outlet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U outlet -d outlet_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://outlet:outlet-ci@localhost:5432/outlet_test
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.x'
+
+      # package.json의 packageManager 버전을 쓴다
+      - run: corepack enable
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm lint
+
+      - run: pnpm test
