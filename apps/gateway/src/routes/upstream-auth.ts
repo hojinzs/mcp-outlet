@@ -17,8 +17,9 @@ import { completeUpstreamOAuth, type UpstreamOAuthDeps } from '../services/upstr
 
 export type UpstreamAuthRouteDeps = { config: Config; db: Db; services: UpstreamOAuthDeps };
 
-// SCR-EP-02 오류: 동의 취소 / 토큰 교환 실패 / 재연결 뒤 연결 테스트 실패(SCR-EP-03)
-type ConnectError = 'cancelled' | 'failed' | 'test_failed';
+// SCR-EP-02 오류: 동의 취소 / 토큰 교환 실패 / 재연결 뒤 연결 테스트 실패(SCR-EP-03) /
+// state 쿠키 만료(10분)로 돌아갈 화면을 모름
+type ConnectError = 'cancelled' | 'failed' | 'test_failed' | 'expired';
 
 const callbackQuery = z.object({
   code: z.string().min(1).optional(),
@@ -50,6 +51,8 @@ export function registerUpstreamAuthRoutes(app: FastifyInstance, deps: UpstreamA
       return reply.redirect(withParam(returnTo, 'connect_error', code));
     };
 
+    // 쿠키는 maxAge가 지나면 브라우저가 지운다. returnTo를 모르므로 홈(엔드포인트 목록)에서 안내한다
+    if (!cookie) return fail('expired', 'state_expired');
     if (!query.success || !state) return fail('failed', 'state_mismatch');
     if (query.data.error) {
       return fail(query.data.error === 'access_denied' ? 'cancelled' : 'failed', 'upstream_error');
