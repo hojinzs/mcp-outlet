@@ -47,7 +47,7 @@ function AdminOnly() {
     <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
       <h1 className="text-xl font-semibold">관리자만 볼 수 있는 화면입니다</h1>
       <p className="text-sm text-muted-foreground">
-        admin 역할이 필요하면 관리자에게 Authentik 그룹 추가를 요청하세요.
+        admin 역할이 필요하면 관리자에게 로그인 서비스(IdP)의 그룹 추가를 요청하세요.
       </p>
       <Button asChild>
         <Link to="/">홈으로</Link>

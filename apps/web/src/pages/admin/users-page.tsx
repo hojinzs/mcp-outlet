@@ -112,8 +112,8 @@ export function UsersPage() {
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">사용자</h1>
         <p className="text-sm text-muted-foreground">
-          역할과 그룹은 IdP(Authentik) 그룹으로 정해지며 여기서 바꿀 수 없습니다. 사용자를 막으려면
-          Authentik에서 그룹을 빼세요.
+          역할과 그룹은 로그인 서비스(IdP)의 그룹으로 정해지며 여기서 바꿀 수 없습니다. 사용자를
+          막으려면 로그인 서비스(IdP)에서 그룹을 빼세요.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
