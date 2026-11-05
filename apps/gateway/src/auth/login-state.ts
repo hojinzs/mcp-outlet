@@ -15,10 +15,17 @@ export type LoginState = z.infer<typeof loginStateSchema>;
 export const LOGIN_STATE_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_RETURN_TO = '/admin/';
 
-// 오픈 리다이렉트 방지: /admin/ 아래 경로만 받는다 (SCR-COM-02)
+// 오픈 리다이렉트 방지: /admin/ 아래 경로만 받는다 (SCR-COM-02).
+// '/admin/..//evil.example'처럼 정규화하면 밖으로 나가는 값이 있어, 정규화한 결과를 검사하고 그 값을 쓴다
+const RETURN_TO_BASE = 'http://outlet.invalid';
+
 export function safeReturnTo(value: string | undefined): string {
   if (!value?.startsWith('/admin/') || value.includes('\\')) return DEFAULT_RETURN_TO;
-  return value;
+  const url = new URL(value, RETURN_TO_BASE);
+  if (url.origin !== RETURN_TO_BASE || !url.pathname.startsWith('/admin/')) {
+    return DEFAULT_RETURN_TO;
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 export function createLoginState(returnTo: string | undefined, now: Date): LoginState {

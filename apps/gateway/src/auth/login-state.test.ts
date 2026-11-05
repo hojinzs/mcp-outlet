@@ -13,6 +13,9 @@ const now = new Date('2026-11-04T00:00:00Z');
 describe('safeReturnTo', () => {
   it('/admin/ 아래 경로만 받는다', () => {
     expect(safeReturnTo('/admin/endpoints/1')).toBe('/admin/endpoints/1');
+    expect(safeReturnTo('/admin/endpoints/new?connector=c#x')).toBe(
+      '/admin/endpoints/new?connector=c#x',
+    );
     for (const bad of [
       undefined,
       '',
@@ -21,6 +24,10 @@ describe('safeReturnTo', () => {
       '/api/me',
       '/admin',
       '/admin/\\evil',
+      // 정규화하면 /admin/ 밖으로 나간다
+      '/admin/..//evil.example/',
+      '/admin/%2e%2e//evil.example/',
+      '/admin/../api/me',
     ]) {
       expect(safeReturnTo(bad)).toBe('/admin/');
     }
