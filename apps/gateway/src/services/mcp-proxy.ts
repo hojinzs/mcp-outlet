@@ -31,7 +31,7 @@ export type McpProxyDeps = {
 };
 
 // JSON으로 읽지 못한 본문은 json이 undefined
-export type McpRequestBody = { raw: string; json: unknown };
+export type McpRequestBody = { json: unknown };
 
 export type McpHttpRequest = {
   method: 'GET' | 'POST' | 'DELETE';
@@ -185,11 +185,15 @@ export function createMcpProxy(deps: McpProxyDeps) {
     }
 
     let plan: ReturnType<typeof planInbound> = { kind: 'forward', toolCalls: new Map() };
+    // 허용목록을 판정한 파싱 결과를 다시 직렬화해 보낸다. 원문을 보내면 중복 키를 업스트림이
+    // 다르게 읽어(앞의 값을 쓰는 파서) 판정한 툴과 다른 툴이 불릴 수 있다 (F-EP-02)
+    let forwardBody: string | undefined;
     if (request.method === 'POST') {
       if (request.body?.json === undefined) {
         return jsonReply(400, errorResponse(null, RPC_ERROR.parseError, 'JSON 본문이 아닙니다.'));
       }
       plan = planInbound(request.body.json, endpoint.allowedTools);
+      forwardBody = JSON.stringify(request.body.json);
     }
     if (plan.kind === 'deny') {
       for (const toolName of plan.deniedTools) recordToolCall(toolName, 'denied');
@@ -213,7 +217,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
         {
           method: request.method,
           headers: pickHeaders((name) => request.headers[name], REQUEST_HEADERS),
-          body: request.method === 'POST' ? request.body?.raw : undefined,
+          body: forwardBody,
           signal: request.signal,
           adminUrl: adminUrl(endpoint.id),
         },

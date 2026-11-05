@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createServer, type IncomingHttpHeaders } from 'node:http';
+import { createServer, type IncomingHttpHeaders, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -54,6 +54,8 @@ function createMcpServer(): McpServer {
 export async function startFakeUpstream(options: { token?: string; jsonResponse?: boolean } = {}) {
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const received: IncomingHttpHeaders[] = [];
+  // POST 본문 원문 (gateway가 업스트림에 보낸 그대로)
+  const bodies: string[] = [];
   // 응답을 끝내기 전에 연결이 끊긴 요청 수 (abort 전파 확인용)
   const stats = { closedEarly: 0 };
 
@@ -95,7 +97,9 @@ export async function startFakeUpstream(options: { token?: string; jsonResponse?
       await createMcpServer().connect(created);
       transport = created;
     }
-    await transport.handleRequest(req, res);
+    const raw = req.method === 'POST' ? await readBody(req) : undefined;
+    if (raw !== undefined) bodies.push(raw);
+    await transport.handleRequest(req, res, raw === undefined ? undefined : JSON.parse(raw));
   });
 
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
@@ -105,6 +109,7 @@ export async function startFakeUpstream(options: { token?: string; jsonResponse?
     url: `http://127.0.0.1:${port}/mcp`,
     origin: `http://127.0.0.1:${port}`,
     received,
+    bodies,
     stats,
     sessions: transports,
     async close() {
@@ -116,3 +121,9 @@ export async function startFakeUpstream(options: { token?: string; jsonResponse?
 }
 
 export type FakeUpstream = Awaited<ReturnType<typeof startFakeUpstream>>;
+
+async function readBody(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+}

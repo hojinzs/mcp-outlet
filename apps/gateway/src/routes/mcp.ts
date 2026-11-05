@@ -47,7 +47,7 @@ function sendRpcError(reply: FastifyReply, status: number, code: number, message
 
 export async function registerMcpRoutes(app: FastifyInstance, deps: McpRouteDeps): Promise<void> {
   await app.register(async (scope) => {
-    // 원문을 그대로 업스트림에 보내야 해서 직접 읽는다. 깨진 JSON은 JSON-RPC parse error로 답한다
+    // 깨진 JSON을 JSON-RPC parse error로 답하려고 직접 읽는다
     scope.removeContentTypeParser('application/json');
     scope.addContentTypeParser(
       'application/json',
@@ -59,7 +59,7 @@ export async function registerMcpRoutes(app: FastifyInstance, deps: McpRouteDeps
         } catch {
           json = undefined;
         }
-        done(null, { raw: raw as string, json } satisfies McpRequestBody);
+        done(null, { json } satisfies McpRequestBody);
       },
     );
 

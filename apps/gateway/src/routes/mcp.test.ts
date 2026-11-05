@@ -304,6 +304,24 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     });
   });
 
+  it('허용목록을 판정한 파싱 결과를 업스트림에 보내 중복 키로 다른 툴을 부를 수 없다', async () => {
+    const { url, token } = await newEndpoint();
+    // JSON.parse는 뒤의 name(read_item)을 쓴다. 원문을 그대로 보내면 앞의 값을 쓰는 업스트림은 delete_item을 부른다
+    const raw =
+      '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"delete_item","name":"read_item","arguments":{"id":"1"}}}';
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${token}`,
+      },
+      body: raw,
+    });
+    expect(JSON.parse(upstream.bodies.at(-1) ?? 'null')).toEqual(JSON.parse(raw));
+    expect(upstream.bodies.at(-1)).not.toContain('delete_item');
+  });
+
   it('깨진 JSON은 parse error', async () => {
     const { url, token } = await newEndpoint();
     const res = await fetch(url, {
