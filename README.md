@@ -1,9 +1,10 @@
 # MCP Outlet
 
-토큰 방식 MCP·로컬(stdio) MCP·외부 API를 OIDC 인증 뒤에 묶어, Claude·ChatGPT 커스텀 커넥터로
-붙일 수 있게 하는 셀프호스트 MCP 게이트웨이.
+토큰 방식 원격 MCP와 외부 API(내장 커넥터)를 OIDC 인증 뒤에 묶어, Claude·ChatGPT 커스텀 커넥터로
+붙일 수 있게 하는 셀프호스트 MCP 게이트웨이. 사용자가 자기 커넥터를 등록하고 필요한 툴만 추린 엔드포인트 URL을 받는다.
+로컬(stdio) MCP와 관리자 전역 커넥터는 v2다.
 
-요구사항: [docs/PRD.md](docs/PRD.md)
+요구사항: [docs/PRD.md](docs/PRD.md) · 화면 정의: [docs/screen-definitions](docs/screen-definitions/index.md) · 요구사항별 구현·테스트 위치: [docs/traceability.md](docs/traceability.md)
 
 ## 구성
 
@@ -41,6 +42,10 @@ pnpm dev               # gateway :3000, web :5173/admin/
 | `pnpm --filter @mcp-outlet/gateway db:generate` | 스키마 변경 후 마이그레이션 생성 (기동 시 자동 적용)              |
 | `pnpm dev:runner`                               | (v2) runner :4000. `.env`에 `RUNNER_URL`·`RUNNER_TOKEN`을 채운 뒤 |
 
+DB 테스트는 `.env.test.local`의 `TEST_DATABASE_URL`(compose Postgres의 별도 DB `outlet_test`. 처음 한 번 `docker compose exec postgres createdb -U outlet outlet_test`)을 쓰고, 값이 없으면 건너뛴다. OIDC는 jose로 만든 테스트 JWKS(`apps/gateway/src/testing/fake-idp.ts`)로 대신한다.
+
+GitHub Actions(`.github/workflows/ci.yml`)가 push·PR마다 Postgres 서비스 컨테이너(`outlet_test`)를 띄우고 `pnpm install --frozen-lockfile`, typecheck, lint, test를 돌린다. CI의 DB 접속 값은 테스트 전용 값이다.
+
 ## IdP 설정
 
 OAuth2/OIDC provider 하나를 로컬·개발·프로덕션과 Claude·ChatGPT가 함께 쓴다. Authentik 기준 설정은 다음과 같다.
@@ -69,10 +74,11 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 
 ### 관리 UI 로그인
 
-- `/auth/login?returnTo=/admin/…&prompt=login` → IdP(authorization code + PKCE S256) → `/auth/callback` → `returnTo`. `returnTo`는 `/admin/` 아래만 받는다.
+- `/auth/login?returnTo=/admin/…` → IdP(authorization code + PKCE S256) → `/auth/callback` → `returnTo`. `returnTo`는 정규화한 뒤에도 `/admin/` 아래인 경로만 받는다(`/admin/..//host` 같은 값은 `/admin/`으로).
 - 세션은 `sessions` 테이블에 SHA-256으로만 저장하고, 쿠키 `outlet_session`(HttpOnly, SameSite=Lax, `PUBLIC_BASE_URL`이 https면 Secure)에 무작위 토큰을 둔다. 수명은 `SESSION_TTL_HOURS`(기본 12시간)이고 로그인 시점부터 센다. 행을 지우면 바로 로그아웃된다.
-- 허용 그룹 밖이면 세션 없이 `/admin/forbidden?reason=not_member`로, 로그인 실패는 `/admin/login?error=access_denied|state_mismatch|idp_error`로 보낸다.
+- 허용 그룹 밖이면 세션 없이 `/admin/forbidden?reason=not_member`로 보내고, 이미 있던 사용자면 role을 user로 내리고 남은 세션을 모두 지운다. 로그인 실패는 `/admin/login?error=access_denied|state_mismatch|idp_error`로 보낸다.
 - `POST /auth/logout`은 gateway 세션만 지우고 `{ redirectTo }`를 돌려준다. `?idp=true`("다른 계정으로 로그인")면 discovery의 `end_session_endpoint`에 `client_id`·`id_token_hint`·`post_logout_redirect_uri={PUBLIC_BASE_URL}/admin/login`을 붙인 주소를 준다. id_token은 DB가 아니라 `/auth/logout` 경로 전용 HttpOnly 쿠키 `outlet_id_token`에 둔다(허용 그룹 밖이라 세션이 없을 때도 쓰기 위해서다). 쿠키가 없으면 돌아올 주소 없이 IdP 로그아웃만 한다.
+- `prompt` 파라미터는 IdP에 넘기지 않는다. Authentik에 `prompt=login`을 넘기면 IdP 세션이 없는 브라우저에서 로그인 흐름이 처음으로 돌아가는 루프가 생겨 뺐다. 계정을 바꿀 때는 위의 `?idp=true` 로그아웃을 쓴다.
 - Authentik 프로바이더 설정: Redirect URI에 `{PUBLIC_BASE_URL}/admin/login`을 **logout** 유형(strict)으로 등록하고, Invalidation flow는 Authentik 세션까지 끝내는 `default-invalidation-flow`로 둔다. `default-provider-invalidation-flow`는 앱 세션만 끝내므로 같은 계정으로 다시 로그인된다.
 
 ## MCP 엔드포인트
@@ -80,11 +86,11 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 `/c/{endpointId}/mcp`는 Streamable HTTP(POST·GET·DELETE)를 원격 커넥터로 중계하거나 내장 커넥터가 직접 처리한다. 내장 커넥터는 요청마다 상태 없는 MCP 서버로 답하므로 POST만 받고 GET·DELETE는 405다.
 
 - **인증**: `Authorization: Bearer <IdP access token>`. 서명(JWKS)·iss·aud(`OIDC_AUDIENCE`, 기본 client_id)·exp를 확인한다. 토큰이 없거나 틀리면 엔드포인트가 있든 없든 401과 `WWW-Authenticate: Bearer resource_metadata="{PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/c/{id}/mcp"`를 준다. 메타데이터(RFC 9728)는 `resource`·`authorization_servers`(IdP issuer)·`scopes_supported`를 담는다.
-- **인가**: 요청마다 토큰의 groups로 로그인 허용 그룹을 다시 확인하고(아니면 403) 사용자의 email·groups를 갱신한다. sub가 엔드포인트 소유자가 아니면 없는 엔드포인트와 같은 404, 엔드포인트 비활성·커넥터 사용 중지는 403이다.
+- **인가**: 요청마다 토큰의 groups로 로그인 허용 그룹을 다시 확인하고(아니면 403) 사용자의 email·groups를 갱신한다. 그룹에서 빠졌으면 role을 user로 내리고 관리 UI 세션을 모두 지운다. sub가 엔드포인트 소유자가 아니면 없는 엔드포인트와 같은 404, 엔드포인트 비활성·커넥터 사용 중지는 403이다.
 - **허용목록**: `tools/list` 응답에서 허용 밖 툴을 빼고, 허용 밖 `tools/call`은 업스트림에 보내지 않고 JSON-RPC 오류(-32602)로 답한다. 배치에 허용 밖 호출이 섞이면 배치 전체를 거부한다.
-- **중계**: 요청 헤더는 `accept`·`content-type`·`mcp-session-id`·`mcp-protocol-version`·`last-event-id`만 넘기고, Authorization은 커넥터 자격증명(헤더 이름·접두어 설정)으로 바꾼다. SSE는 이벤트 단위로 바로 넘기고, 클라이언트가 끊으면 업스트림 요청도 끊는다. 업스트림 실패는 원문 없이 JSON-RPC 오류(-32000)와 관리 화면 링크로 정리한다.
+- **중계**: 요청 헤더는 `accept`·`content-type`·`mcp-session-id`·`mcp-protocol-version`·`last-event-id`만 넘기고, Authorization은 커넥터 자격증명(헤더 이름·접두어 설정)으로 바꾼다. SSE는 이벤트 단위로 바로 넘기고, 클라이언트가 끊으면 업스트림 요청도 끊는다. 업스트림 메시지 하나(JSON 본문, 끝나지 않은 SSE 이벤트)는 8MiB까지만 받고 넘으면 업스트림을 끊는다. `tools/list` 결과는 요청 id가 아니라 결과 모양으로 알아보고 걸러 GET 스트림 재개(`Last-Event-ID`)로 다시 온 목록에도 허용목록을 적용한다. 업스트림 실패는 원문 없이 JSON-RPC 오류(-32000)와 관리 화면 링크로 정리한다.
 - **감사 로그**: `tools/call`마다 `audit_logs`에 사용자·엔드포인트·커넥터·툴 이름·결과(ok·error·denied)·소요시간만 남긴다. 허용목록 밖 호출과 사용 중지된 커넥터로 온 호출은 denied다. `lastCalledAt`은 최대 1분에 한 번 갱신한다.
-- **보관**: 감사 로그는 `AUDIT_RETENTION_DAYS`(기본 90일), 작업 기록(`activity_logs`)은 `ACTIVITY_RETENTION_DAYS`(기본 365일)가 지나면 gateway가 기동할 때와 하루 한 번 지운다. 0이면 지우지 않는다.
+- **보관**: 감사 로그는 `AUDIT_RETENTION_DAYS`(기본 90일), 작업 기록(`activity_logs`)은 `ACTIVITY_RETENTION_DAYS`(기본 365일)가 지나면 gateway가 기동할 때와 하루 한 번 지운다. 0이면 지우지 않는다. 같은 작업이 만료된 관리 UI 세션과 24시간 넘게 엔드포인트 없이 "연결 중"(`pending`)으로 남은 OAuth 커넥터도 지운다(`services/retention.ts`). 로그에는 지운 건수만 남긴다.
 - **사용자 원격 URL**(F-CON-06): https만 받고, DNS 해석 결과가 하나라도 사설·loopback·link-local·CGNAT·메타데이터·ULA 등이면 거부하며, 검사한 주소로만 연결하고 redirect는 따르지 않는다. `UPSTREAM_ALLOW_CIDRS` 대역만 예외이고 그 대역은 http도 받는다. 업스트림 응답 헤더까지 `UPSTREAM_TIMEOUT_MS`를 기다린다.
 - 브라우저 클라이언트(MCP Inspector)를 위해 `/c/*`와 `/.well-known/*`에는 `Access-Control-Allow-Origin: *`를 준다. Authentik의 토큰 엔드포인트는 CORS를 주지 않아 Inspector의 브라우저 안 OAuth는 토큰 교환에서 막힌다. Inspector로 볼 때는 다른 방법으로 받은 access token을 Authorization 헤더에 넣는다.
 
@@ -113,7 +119,7 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 | GET    | `/api/endpoints/:id/connect-info` | 엔드포인트 URL·client_id·secret 설정 여부                                                           |
 | GET    | `/api/connect-secret`             | 공유 Client Secret. 볼 때마다 `activity_logs`에 `client_secret.view`(값 없음). Public client면 404  |
 
-연결 테스트 실패는 `connection_test_result` 분류(`private_address`·`unreachable`·`auth_failed`·`not_mcp`·`timeout`·`redirect`, 내장 커넥터는 `permission_denied`·`upstream_error`도)로만 준다. 저장 흐름에서 실패하면 422 `connection_test_failed`와 `error.details.result`, 툴 목록이 바뀌었으면 409 `tools_changed`, 상한(`MAX_CONNECTORS_PER_USER`·`MAX_ENDPOINTS_PER_USER`, 기본 20·50)을 넘으면 409 `limit_exceeded`다.
+연결 테스트 실패는 `connection_test_result` 분류(`private_address`·`unreachable`·`auth_failed`·`not_mcp`·`timeout`·`redirect`, 내장 커넥터는 `permission_denied`·`upstream_error`도)로만 준다. 저장 흐름에서 실패하면 422 `connection_test_failed`와 `error.details.result`, 툴 목록이 바뀌었으면 409 `tools_changed`, 관리자가 사용 중지한 커넥터로 엔드포인트를 만들면 409 `connector_disabled`, 상한(`MAX_CONNECTORS_PER_USER`·`MAX_ENDPOINTS_PER_USER`, 기본 20·50)을 넘으면 409 `limit_exceeded`다.
 
 ### 관리자 API
 
@@ -135,7 +141,7 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 `packages/builtin-connectors`의 `BuiltinConnector`(툴 정의·`checkAccess`·`callTool`, 지원 인증 방식)를 gateway의 builtin 런타임이 MCP 서버로 감싼다. GA4(속성 목록·메타데이터·runReport·realtime)와 Search Console(사이트·검색 실적·URL 검사·사이트맵) 툴은 모두 조회 전용(`readOnlyHint`)이고, Google API를 fetch로 직접 부른다. 업스트림 오류는 분류 문구로만 돌려주고, 400(인자 오류)일 때만 Google의 `error.message`(300자까지)를 붙여 모델이 인자를 고치게 한다.
 
 - **서비스 계정 JSON**: 키에서 `client_email`·`private_key`만 암호화 저장하고(`token_uri`는 무시), RS256 assertion(RFC 7523)으로 access token을 받는다. 화면에는 `client_email`만 보인다. 이 이메일을 GA4 속성(속성 액세스 관리, 뷰어)과 Search Console 사이트(사용자 및 권한)에 추가해야 데이터가 보인다.
-- **업스트림 OAuth2**: 사용자가 자기 Google OAuth 앱(웹 애플리케이션)의 Client ID·Secret을 넣고 "Google로 연결"을 누르면 커넥터를 `pending`으로 저장한 뒤 동의 화면(PKCE, `access_type=offline`, `prompt=consent`)으로 보낸다. 리디렉션 URI는 `{PUBLIC_BASE_URL}/auth/upstream/callback`이다. 콜백은 세션 사용자가 커넥터 소유자일 때만 refresh token을 암호화 저장하고 `returnTo`에 `connected=1`(실패면 `connect_error=cancelled|failed`)을 붙여 돌려보낸다. 24시간 안에 엔드포인트를 만들지 않은 `pending` 커넥터는 다음 생성 때 지운다.
+- **업스트림 OAuth2**: 사용자가 자기 Google OAuth 앱(웹 애플리케이션)의 Client ID·Secret을 넣고 "Google로 연결"을 누르면 커넥터를 `pending`으로 저장한 뒤 동의 화면(PKCE, `access_type=offline`, `prompt=consent`)으로 보낸다. 리디렉션 URI는 `{PUBLIC_BASE_URL}/auth/upstream/callback`이다. 콜백은 세션 사용자가 커넥터 소유자일 때만 refresh token을 암호화 저장하고 `returnTo`에 `connected=1`(실패면 `connect_error=cancelled|failed`)을 붙여 돌려보낸다. 24시간 안에 엔드포인트를 만들지 않은 `pending` 커넥터는 다음 생성 때와 일일 보관 정리 때 지운다.
 - **토큰 갱신**: access token은 자격증명에 함께 암호화해 두고 만료 1분 전부터 새로 받는다. 같은 프로세스는 요청을 하나로 합치고, 인스턴스 사이는 자격증명 행 잠금(`FOR UPDATE`)으로 한 번만 갱신한다. 갱신이 `invalid_grant`·`invalid_client`로 거부되면 커넥터를 `reauth_required`로 바꾸고, 툴 호출 결과에 재연결 안내와 엔드포인트 관리 화면 링크를 넣는다.
 - **Google Cloud 준비**: Analytics Data API·Analytics Admin API·Search Console API를 켠다. OAuth는 동의 화면을 Workspace **내부(Internal)** 앱으로 만들거나 게시한다. 외부(External) 앱을 테스트 상태로 두면 refresh token이 7일 뒤 만료된다.
 - 외부 API 주소는 커넥터 코드에만 있으므로 사용자 URL용 SSRF 검사를 거치지 않고, 업스트림 호출 상한은 `UPSTREAM_TIMEOUT_MS`를 같이 쓴다.
@@ -149,7 +155,14 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 
 ### 암호화 키 회전
 
-자격증명은 AES-256-GCM으로 암호화하고 암호문(`v1.{키 ID}.…`)에 키 ID를 담는다. 새 키를 `ENCRYPTION_KEY`에, 이전 키를 `ENCRYPTION_KEY_PREVIOUS`에 넣고 재시작하면 둘 다로 풀고, 이전 키로 된 자격증명은 읽을 때 새 키로 다시 저장한다. 모든 자격증명이 한 번씩 쓰인 뒤 `ENCRYPTION_KEY_PREVIOUS`를 비운다.
+자격증명은 AES-256-GCM으로 암호화하고 암호문(`v1.{키 ID}.…`)에 키 ID를 담는다. 키 ID는 키 SHA-256의 앞 11자라 키 자체는 드러나지 않는다.
+
+1. 새 키를 만든다: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
+2. 지금 키를 `ENCRYPTION_KEY_PREVIOUS`로 옮기고 새 키를 `ENCRYPTION_KEY`에 넣은 뒤 재시작한다. 둘 다로 풀 수 있어 중단이 없다.
+3. 기동 직후 gateway가 이전 키로 된 자격증명을 모두 현재 키로 다시 암호화하고 `credentials re-encrypted with current key` 로그에 건수(`rotated`·`failed`)를 남긴다(`services/key-rotation.ts`). 그 사이 읽힌 자격증명은 읽을 때 바로 바꾼다.
+4. 로그의 `failed`가 0이면 `ENCRYPTION_KEY_PREVIOUS`를 비우고 다시 재시작한다. `failed`는 어느 키로도 풀리지 않는 행(이미 버린 키로 된 것)이고, 그 커넥터는 사용자가 자격증명을 다시 넣어야 한다.
+
+암호화 키를 잃으면 자격증명을 되살릴 수 없다. Postgres 백업과 함께 키를 따로 보관한다.
 
 ## 배포
 
@@ -163,5 +176,19 @@ v1은 gateway와 postgres만 띄운다. stdio 런타임(v2)을 켤 때는 runner
 docker compose -f compose.yaml -f compose.stdio.yaml up -d --build
 ```
 
-TLS와 도메인은 외부 리버스 프록시가 맡는다. SSE가 끊기지 않도록 프록시 버퍼링을 꺼야 한다.
+TLS와 도메인은 외부 리버스 프록시가 맡는다. SSE가 끊기지 않도록 프록시 버퍼링을 꺼야 한다. 프록시 뒤에서는 `TRUST_PROXY=true`와 외부 주소 `PUBLIC_BASE_URL`(https)을 준다. 기동하면 DB 마이그레이션을 자동 적용하고, `GET /health`로 상태를 본다.
 백업 대상은 Postgres 볼륨과 `ENCRYPTION_KEY`다.
+
+설정은 모두 환경변수로 받고(`apps/gateway/src/config.ts`, 예시는 `.env.example`) 다니웍스 고정값은 코드에 없다. 운영에서 자주 보는 값:
+
+| 환경변수                                           | 기본값   | 내용                                                          |
+| -------------------------------------------------- | -------- | ------------------------------------------------------------- |
+| `OIDC_LOGIN_GROUPS` / `OIDC_ADMIN_GROUPS`          | - / 필수 | 로그인 허용 그룹(비우면 IdP 로그인 성공자 전부) / 관리자 그룹 |
+| `MAX_CONNECTORS_PER_USER`                          | 20       | 사용자당 커넥터 상한                                          |
+| `MAX_ENDPOINTS_PER_USER`                           | 50       | 사용자당 엔드포인트 상한                                      |
+| `UPSTREAM_TIMEOUT_MS`                              | 30000    | 업스트림(원격 MCP·Google API) 호출 상한                       |
+| `UPSTREAM_ALLOW_CIDRS`                             | (비움)   | 사설 주소 차단 예외 대역. 운영에서는 비운다                   |
+| `AUDIT_RETENTION_DAYS` / `ACTIVITY_RETENTION_DAYS` | 90 / 365 | 감사 로그·작업 기록 보관 일수. 0이면 지우지 않는다            |
+| `SESSION_TTL_HOURS`                                | 12       | 관리 UI 세션 수명                                             |
+
+개발 환경은 Coolify(development 환경)에 Dockerfile `docker/gateway.Dockerfile`로 배포한다. push 자동 배포는 없고 `.claude/skills/coolify/SKILL.md`의 명령으로 배포한다.
