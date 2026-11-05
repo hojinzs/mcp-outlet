@@ -83,7 +83,8 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 - **인가**: 요청마다 토큰의 groups로 로그인 허용 그룹을 다시 확인하고(아니면 403) 사용자의 email·groups를 갱신한다. sub가 엔드포인트 소유자가 아니면 없는 엔드포인트와 같은 404, 엔드포인트 비활성·커넥터 사용 중지는 403이다.
 - **허용목록**: `tools/list` 응답에서 허용 밖 툴을 빼고, 허용 밖 `tools/call`은 업스트림에 보내지 않고 JSON-RPC 오류(-32602)로 답한다. 배치에 허용 밖 호출이 섞이면 배치 전체를 거부한다.
 - **중계**: 요청 헤더는 `accept`·`content-type`·`mcp-session-id`·`mcp-protocol-version`·`last-event-id`만 넘기고, Authorization은 커넥터 자격증명(헤더 이름·접두어 설정)으로 바꾼다. SSE는 이벤트 단위로 바로 넘기고, 클라이언트가 끊으면 업스트림 요청도 끊는다. 업스트림 실패는 원문 없이 JSON-RPC 오류(-32000)와 관리 화면 링크로 정리한다.
-- **감사 로그**: `tools/call`마다 `audit_logs`에 사용자·엔드포인트·커넥터·툴 이름·결과(ok·error·denied)·소요시간만 남긴다. `lastCalledAt`은 최대 1분에 한 번 갱신한다.
+- **감사 로그**: `tools/call`마다 `audit_logs`에 사용자·엔드포인트·커넥터·툴 이름·결과(ok·error·denied)·소요시간만 남긴다. 허용목록 밖 호출과 사용 중지된 커넥터로 온 호출은 denied다. `lastCalledAt`은 최대 1분에 한 번 갱신한다.
+- **보관**: 감사 로그는 `AUDIT_RETENTION_DAYS`(기본 90일), 작업 기록(`activity_logs`)은 `ACTIVITY_RETENTION_DAYS`(기본 365일)가 지나면 gateway가 기동할 때와 하루 한 번 지운다. 0이면 지우지 않는다.
 - **사용자 원격 URL**(F-CON-06): https만 받고, DNS 해석 결과가 하나라도 사설·loopback·link-local·CGNAT·메타데이터·ULA 등이면 거부하며, 검사한 주소로만 연결하고 redirect는 따르지 않는다. `UPSTREAM_ALLOW_CIDRS` 대역만 예외이고 그 대역은 http도 받는다. 업스트림 응답 헤더까지 `UPSTREAM_TIMEOUT_MS`를 기다린다.
 - 브라우저 클라이언트(MCP Inspector)를 위해 `/c/*`와 `/.well-known/*`에는 `Access-Control-Allow-Origin: *`를 준다. Authentik의 토큰 엔드포인트는 CORS를 주지 않아 Inspector의 브라우저 안 OAuth는 토큰 교환에서 막힌다. Inspector로 볼 때는 다른 방법으로 받은 access token을 Authorization 헤더에 넣는다.
 
@@ -113,6 +114,21 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 | GET    | `/api/connect-secret`             | 공유 Client Secret. 볼 때마다 `activity_logs`에 `client_secret.view`(값 없음). Public client면 404  |
 
 연결 테스트 실패는 `connection_test_result` 분류(`private_address`·`unreachable`·`auth_failed`·`not_mcp`·`timeout`·`redirect`, 내장 커넥터는 `permission_denied`·`upstream_error`도)로만 준다. 저장 흐름에서 실패하면 422 `connection_test_failed`와 `error.details.result`, 툴 목록이 바뀌었으면 409 `tools_changed`, 상한(`MAX_CONNECTORS_PER_USER`·`MAX_ENDPOINTS_PER_USER`, 기본 20·50)을 넘으면 409 `limit_exceeded`다.
+
+### 관리자 API
+
+`/api/admin/*`는 세션에 더해 매 요청 DB의 role이 admin이어야 한다(아니면 403). role은 관리 UI 로그인과 MCP 요청 때 IdP 그룹(`OIDC_ADMIN_GROUPS`)으로 다시 정해진다. 자격증명 값, 연결된 업스트림 계정, 툴 허용목록은 관리자에게도 내려주지 않는다.
+
+| 메서드 | 경로                              | 내용                                                                                                                                          |
+| ------ | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/admin/users`                | 사용자와 커넥터·중지·엔드포인트 수, 최근 호출. 최근 호출순, 없으면 마지막 로그인순. `q`(이메일·sub 일부), `filter=disabled`                   |
+| GET    | `/api/admin/users/:id/connectors` | 커넥터 이름·종류·원격 URL·상태·엔드포인트 수·최근 호출·중지 정보. 원격 URL은 쿼리 값과 `user:pass@`를 `***`로 가린다                          |
+| GET    | `/api/admin/users/:id/endpoints`  | 감사 로그 필터용 엔드포인트 이름 목록                                                                                                         |
+| PATCH  | `/api/admin/connectors/:id`       | `{ disabled: true, reason }`(사유 1~200자) / `{ disabled: false }`. 상태가 바뀔 때만 `activity_logs`에 `connector.disable`·`connector.enable` |
+| GET    | `/api/admin/audit`                | `from`·`to`(ISO 8601)·`userId`·`endpointId`·`connectorId`·`result`·`tool`(일부)로 최신순 50건. 응답의 `nextCursor`를 `cursor`로               |
+| GET    | `/api/admin/audit/summary`        | 같은 필터의 호출·오류·거부 수, 소요시간 중앙값·p95, 보관 기간(`retentionDays`)                                                                |
+
+사용 중지된 커넥터의 엔드포인트는 다음 MCP 요청부터 403이고, 사용자의 엔드포인트 목록에는 `status: disabled`와 `connector.disabledReason`이 내려간다. 사용자가 커넥터 설정을 바꿔도 풀리지 않는다. 관리 화면은 `/admin/manage/users`(SCR-ADM-04)와 `/admin/manage/audit`(SCR-ADM-06)이고, 관리 메뉴는 admin에게만 보인다.
 
 ### 내장 커넥터 (Google Analytics 4 + Search Console)
 
