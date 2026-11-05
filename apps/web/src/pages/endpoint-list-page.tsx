@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { PlusIcon, TriangleAlertIcon } from 'lucide-react';
+import { useState } from 'react';
 import { Link } from 'react-router';
-import { builtinsQuery, endpointsQuery } from '../api/queries.ts';
-import type { Builtin, EndpointSummary } from '../api/types.ts';
+import { builtinsQuery, connectorsQuery, endpointsQuery } from '../api/queries.ts';
+import type { Builtin, Connector, EndpointSummary } from '../api/types.ts';
 import { CopyButton } from '../components/copy-button.tsx';
+import { DeleteConnectorDialog } from '../components/delete-connector-dialog.tsx';
 import { Loading } from '../components/loading.tsx';
 import { PageError } from '../components/page-error.tsx';
 import { StatusBadge } from '../components/status-badge.tsx';
@@ -11,6 +13,7 @@ import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { builtinNameOf } from '../features/connectors/builtin.ts';
+import { orphanConnectors } from '../features/connectors/deletion.ts';
 import { connectorKindLabel } from '../features/endpoints/connector-kind.ts';
 import { type ReauthBanner, reauthBanners } from '../features/endpoints/status.ts';
 
@@ -108,9 +111,66 @@ function EndpointRow({
   );
 }
 
+// 엔드포인트를 지울 때 커넥터를 남겨 두면 사용자당 커넥터 상한을 차지한다.
+// 다시 쓰거나 지울 수 있게 따로 보여준다 (F-CON-04, SCR-EP-01 결정 사항)
+function OrphanConnectors({
+  connectors,
+  builtins,
+}: {
+  connectors: readonly Connector[];
+  builtins: readonly Builtin[] | undefined;
+}) {
+  const [deleting, setDeleting] = useState<Connector | null>(null);
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h2 className="text-lg font-semibold">엔드포인트 없는 커넥터</h2>
+        <p className="text-sm text-muted-foreground">
+          엔드포인트 추가에서 "내 커넥터에서 고르기"로 다시 쓸 수 있습니다. 쓰지 않으면 지우세요.
+          커넥터 수에도 상한이 있습니다.
+        </p>
+      </div>
+      <ul className="divide-y rounded-lg border bg-background text-sm">
+        {connectors.map((connector) => (
+          <li key={connector.id} className="flex items-center gap-3 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate">{connector.name}</div>
+              <div className="text-xs text-muted-foreground">
+                {connectorKindLabel(connector.runtime, builtinNameOf(builtins, connector.builtin))}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive"
+              onClick={() => setDeleting(connector)}
+            >
+              삭제
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {deleting && (
+        <DeleteConnectorDialog
+          connector={deleting}
+          endpoints={[]}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
 export function EndpointListPage() {
   const endpoints = useQuery(endpointsQuery);
-  const hasBuiltin = endpoints.data?.some((endpoint) => endpoint.connector.builtin !== null);
+  const connectors = useQuery(connectorsQuery);
+  const orphans = orphanConnectors(connectors.data);
+  const hasBuiltin =
+    endpoints.data?.some((endpoint) => endpoint.connector.builtin !== null) ||
+    orphans.some((connector) => connector.builtin !== null);
   // 내장 서비스 이름을 못 받으면 "내장 서비스"로 둔다
   const builtins = useQuery({ ...builtinsQuery, enabled: hasBuiltin === true });
 
@@ -164,6 +224,7 @@ export function EndpointListPage() {
           </table>
         </div>
       )}
+      {orphans.length > 0 && <OrphanConnectors connectors={orphans} builtins={builtins.data} />}
     </div>
   );
 }
