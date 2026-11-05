@@ -39,6 +39,17 @@ export async function createFakeIdp(options: { now: () => Date; endSession?: boo
       .sign(privateKey);
   }
 
+  // MCP Bearer용 access token. 실제 Authentik access token처럼 scope·azp가 있다 (id_token에는 없다)
+  async function signAccessToken(
+    claims: JWTPayload,
+    overrides: { iss?: string; aud?: string } = {},
+  ) {
+    return signIdToken(
+      { scope: 'openid email profile', azp: FAKE_CLIENT_ID, ...claims },
+      overrides,
+    );
+  }
+
   // 사용자가 IdP에서 로그인을 마친 것처럼 authorize URL에 대한 코드를 만든다
   function authorize(authorizeUrl: string, claims: JWTPayload): string {
     const params = new URL(authorizeUrl).searchParams;
@@ -79,5 +90,5 @@ export async function createFakeIdp(options: { now: () => Date; endSession?: boo
     return new Response('not found', { status: 404 });
   };
 
-  return { fetch, authorize, signIdToken, requests };
+  return { fetch, authorize, signIdToken, signAccessToken, requests };
 }

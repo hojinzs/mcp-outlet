@@ -158,6 +158,7 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
         requiredClaims: ['sub', 'exp'],
       });
       if (typeof payload.sub !== 'string' || payload.sub === '') throw new Error('sub');
+      if (!hasScope(payload)) throw new Error('scope');
       return { ...payload, sub: payload.sub };
     } catch {
       throw new OidcError('access_token');
@@ -204,6 +205,13 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
 }
 
 export type OidcClient = ReturnType<typeof createOidcClient>;
+
+// id_token을 Bearer로 받지 않으려고 scope 클레임을 요구한다. Authentik은 access token과 id_token의
+// typ·aud·nonce가 같고 scope·azp만 access token에 있다. scp는 배열로 주는 IdP용 (RFC 9068 scope, F-AUTH-03)
+function hasScope(payload: JWTPayload): boolean {
+  const scope = payload.scope ?? payload.scp;
+  return (typeof scope === 'string' && scope !== '') || Array.isArray(scope);
+}
 
 // RFC 6749 2.3.1: id·secret을 form-urlencode한 뒤 Basic으로 묶는다
 function basicAuth(settings: OidcSettings): string {

@@ -65,7 +65,7 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     });
     expect(res.statusCode).toBe(201);
     const endpoint = res.json();
-    const token = await idp.signIdToken({
+    const token = await idp.signAccessToken({
       sub: user.sub,
       email: 'mcp@test',
       groups: [TEST_GROUPS.users],
@@ -130,7 +130,7 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     expect(bad.status).toBe(401);
     expect(bad.headers.get('www-authenticate')).toContain('error="invalid_token"');
 
-    const wrongAud = await idp.signIdToken(
+    const wrongAud = await idp.signAccessToken(
       { sub: 'x', groups: [TEST_GROUPS.users] },
       { aud: 'other' },
     );
@@ -162,7 +162,11 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
   it('로그인 허용 그룹에서 빠지면 403이고 groups를 갱신하며 관리자 role과 관리 UI 세션을 거둔다', async () => {
     const { url, user } = await newEndpoint();
     await db.update(users).set({ role: 'admin' }).where(eq(users.sub, user.sub));
-    const token = await idp.signIdToken({ sub: user.sub, email: 'new@test', groups: ['Other'] });
+    const token = await idp.signAccessToken({
+      sub: user.sub,
+      email: 'new@test',
+      groups: ['Other'],
+    });
     const res = await post(url, token, initialize);
     expect(res.status).toBe(403);
     const [row] = await db.select().from(users).where(eq(users.sub, user.sub));

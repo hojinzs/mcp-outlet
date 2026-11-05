@@ -75,7 +75,7 @@ describe.skipIf(!testDatabaseUrl)('관리자 API (DB)', () => {
 
   // 사용 중지 여부는 initialize 응답 상태로 본다
   function mcpCall(endpointId: string, sub: string, payload: object = initialize) {
-    return idp.signIdToken({ sub, groups: [TEST_GROUPS.users] }).then((token) =>
+    return idp.signAccessToken({ sub, groups: [TEST_GROUPS.users] }).then((token) =>
       app.inject({
         method: 'POST',
         url: `/c/${endpointId}/mcp`,

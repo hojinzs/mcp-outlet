@@ -39,7 +39,7 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
   });
 
   async function mcpCall(user: LoggedIn, endpointId: string, body: unknown) {
-    const token = await idp.signIdToken({ sub: user.sub, groups: [TEST_GROUPS.users] });
+    const token = await idp.signAccessToken({ sub: user.sub, groups: [TEST_GROUPS.users] });
     const res = await app.inject({
       method: 'POST',
       url: `/c/${endpointId}/mcp`,
@@ -170,7 +170,7 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     ]);
 
     // 상태 없는 서버라 GET 스트림은 405
-    const token = await idp.signIdToken({ sub: user.sub, groups: [TEST_GROUPS.users] });
+    const token = await idp.signAccessToken({ sub: user.sub, groups: [TEST_GROUPS.users] });
     const get = await app.inject({
       method: 'GET',
       url: `/c/${endpoint.id}/mcp`,

@@ -82,28 +82,37 @@ describe('OIDC client', () => {
   it('access token: 서명·iss·aud·exp를 확인하고 aud는 지정한 값과 비교한다', async () => {
     const idp = await createFakeIdp({ now });
     const client = createOidcClient(settings, { fetch: idp.fetch, now });
-    const good = await idp.signIdToken({ sub: 'u1' });
+    const good = await idp.signAccessToken({ sub: 'u1' });
     await expect(client.verifyAccessToken(good, FAKE_CLIENT_ID)).resolves.toMatchObject({
       sub: 'u1',
     });
     await expect(client.verifyAccessToken(good, 'https://other-audience')).rejects.toMatchObject({
       kind: 'access_token',
     });
-    const wrongIss = await idp.signIdToken({ sub: 'u1' }, { iss: 'https://evil' });
+    const wrongIss = await idp.signAccessToken({ sub: 'u1' }, { iss: 'https://evil' });
     await expect(client.verifyAccessToken(wrongIss, FAKE_CLIENT_ID)).rejects.toBeInstanceOf(
       OidcError,
     );
     // 같은 kid라도 다른 키로 서명하면 거부한다
     const forger = await createFakeIdp({ now });
-    const forged = await forger.signIdToken({ sub: 'u1' });
+    const forged = await forger.signAccessToken({ sub: 'u1' });
     await expect(client.verifyAccessToken(forged, FAKE_CLIENT_ID)).rejects.toBeInstanceOf(
       OidcError,
     );
-    const noSub = await idp.signIdToken({});
+    const noSub = await idp.signAccessToken({});
     await expect(client.verifyAccessToken(noSub, FAKE_CLIENT_ID)).rejects.toBeInstanceOf(OidcError);
     const later = () => new Date(now().getTime() + 60 * 60 * 1000);
     const expired = createOidcClient(settings, { fetch: idp.fetch, now: later });
     await expect(expired.verifyAccessToken(good, FAKE_CLIENT_ID)).rejects.toBeInstanceOf(OidcError);
+    // 같은 IdP·aud의 id_token은 scope가 없어 MCP Bearer로 받지 않는다
+    const idToken = await idp.signIdToken({ sub: 'u1', nonce: 'n' });
+    await expect(client.verifyAccessToken(idToken, FAKE_CLIENT_ID)).rejects.toBeInstanceOf(
+      OidcError,
+    );
+    const scp = await idp.signIdToken({ sub: 'u1', scp: ['openid'] });
+    await expect(client.verifyAccessToken(scp, FAKE_CLIENT_ID)).resolves.toMatchObject({
+      sub: 'u1',
+    });
     await expect(client.issuer()).resolves.toBe('https://idp.test/app');
   });
 
