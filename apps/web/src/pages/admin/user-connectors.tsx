@@ -26,19 +26,19 @@ function ConnectorRow({
   return (
     <tr className="border-t align-top">
       <td className="px-3 py-2 font-medium">
-        <span className="block max-w-48 truncate" title={connector.name}>
+        <span className="block max-w-36 truncate" title={connector.name}>
           {connector.name}
         </span>
       </td>
       {/* 내장 서비스 이름이 길어 표가 가로로 넘치지 않게 줄이고 전체 이름은 title로 */}
       <td className="px-3 py-2">
-        <span className="block max-w-32 truncate" title={kind}>
+        <span className="block max-w-28 truncate" title={kind}>
           {kind}
         </span>
       </td>
       <td className="px-3 py-2">
         {connector.url ? (
-          <code className="block max-w-56 truncate font-mono text-xs" title={connector.url}>
+          <code className="block max-w-36 truncate font-mono text-xs" title={connector.url}>
             {connector.url}
           </code>
         ) : (
@@ -49,7 +49,7 @@ function ConnectorRow({
         <Badge variant={status.variant}>{status.label}</Badge>
       </td>
       <td className="px-3 py-2 text-right">{connector.endpointCount}</td>
-      <td className="px-3 py-2">{formatDateTime(connector.lastCalledAt)}</td>
+      <td className="min-w-26 px-3 py-2">{formatDateTime(connector.lastCalledAt)}</td>
       <td className="px-3 py-2">
         {disabled ? (
           <div className="flex max-w-56 flex-col gap-1">
