@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '24.x'
+          node-version: "24.x"
           # packageManager 필드를 보고 pnpm 캐시를 켜려다 pnpm이 아직 없어 실패한다
           package-manager-cache: false
 
