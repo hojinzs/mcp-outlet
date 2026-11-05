@@ -4,7 +4,7 @@ import { adminUserConnectorsQuery, builtinsQuery } from '../../api/queries.ts';
 import type { AdminConnector, Builtin } from '../../api/types.ts';
 import { Badge } from '../../components/ui/badge.tsx';
 import { Button } from '../../components/ui/button.tsx';
-import { adminConnectorStatus } from '../../features/admin/users.ts';
+import { adminConnectorStatus, userLabel } from '../../features/admin/users.ts';
 import { builtinNameOf } from '../../features/connectors/builtin.ts';
 import { connectorKindLabel } from '../../features/endpoints/connector-kind.ts';
 import { formatDateTime } from '../../lib/format.ts';
@@ -47,7 +47,8 @@ function ConnectorRow({
           <div className="flex max-w-64 flex-col gap-1">
             <p className="text-xs">사유: {disabled.reason ?? '-'}</p>
             <p className="text-xs text-muted-foreground">
-              {formatDateTime(disabled.at)} · {disabled.by?.email ?? '지워진 관리자'}
+              {formatDateTime(disabled.at)} ·{' '}
+              {disabled.by ? userLabel(disabled.by) : '지워진 관리자'}
             </p>
             <Button
               size="sm"

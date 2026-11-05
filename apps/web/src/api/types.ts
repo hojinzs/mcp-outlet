@@ -214,7 +214,7 @@ export type AdminConnector = {
     at: string;
     reason: string | null;
     // 중지한 관리자. 그 계정이 지워졌으면 null
-    by: { id: string; email: string | null } | null;
+    by: { id: string; email: string | null; sub: string | null } | null;
   } | null;
   endpointCount: number;
   lastCalledAt: string | null;
