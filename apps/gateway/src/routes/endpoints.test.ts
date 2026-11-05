@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.ts';
-import { setConnectorDisabled } from '../db/queries/connectors.ts';
+import { setConnectorDisabled, updateConnector } from '../db/queries/connectors.ts';
 import { createLoggedInUser, testConfig } from '../testing/app.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
 import { FAKE_CLIENT_ID } from '../testing/fake-idp.ts';
@@ -180,6 +180,32 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 API (DB)', () => {
       connectorId,
     });
     expect(allowed.statusCode).toBe(201);
+  });
+
+  it('연결 테스트를 통과하지 않은 커넥터로는 새 엔드포인트를 만들 수 없다', async () => {
+    const { user, call } = await setup();
+    const created = await call('POST', '/api/endpoints', {
+      name: '첫 엔드포인트',
+      allowedTools: ['read_item'],
+      connector: connector(),
+    });
+    const connectorId = created.json().connector.id;
+    const second = { name: '두 번째', allowedTools: ['read_item'], connectorId };
+
+    for (const status of ['pending', 'reauth_required', 'error'] as const) {
+      await updateConnector(db, user.id, connectorId, { status });
+      const denied = await call('POST', '/api/endpoints', second);
+      expect(denied.statusCode).toBe(409);
+      expect(denied.json().error).toMatchObject({
+        code: 'connector_not_ready',
+        details: { status },
+      });
+    }
+    expect((await call('GET', '/api/endpoints')).json().endpoints).toHaveLength(1);
+
+    // 재테스트를 통과하면 다시 만들 수 있다
+    expect((await call('POST', `/api/connectors/${connectorId}/test`)).json().result).toBe('ok');
+    expect((await call('POST', '/api/endpoints', second)).statusCode).toBe(201);
   });
 
   it('다른 사용자의 URL과 잘못된 id는 같은 404', async () => {

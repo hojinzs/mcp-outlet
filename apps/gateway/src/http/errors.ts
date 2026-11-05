@@ -19,6 +19,8 @@ const messages = {
   tools_changed: '커넥터의 툴 목록이 바뀌었습니다. 툴 목록을 다시 불러오세요.',
   connection_test_failed: '연결 테스트에 실패했습니다.',
   connector_disabled: '관리자가 사용 중지한 커넥터입니다.',
+  connector_not_ready:
+    '연결 테스트를 통과하지 않은 커넥터입니다. 다시 연결하거나 연결 테스트를 하세요.',
   internal_error: '요청을 처리하지 못했습니다.',
 } as const;
 
@@ -33,6 +35,7 @@ const statusOf: Record<ErrorCode, number> = {
   tools_changed: 409,
   connection_test_failed: 422,
   connector_disabled: 409,
+  connector_not_ready: 409,
   internal_error: 500,
 };
 

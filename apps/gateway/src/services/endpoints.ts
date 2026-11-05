@@ -183,6 +183,9 @@ export async function createEndpoint(
   if (!existing) throw new ServiceError('not_found');
   // 만들어도 MCP 호출은 거부되므로 생성 단계에서 막는다 (SCR-ADM-04 사용 중지)
   if (existing.connector.disabledAt) throw new ServiceError('connector_disabled');
+  // 연결 중·재연결 필요·오류 커넥터는 툴 캐시를 믿을 수 없다. 연결 테스트를 통과한 뒤에 만든다 (F-CON-05)
+  const { status } = existing.connector;
+  if (status !== 'ok') throw new ServiceError('connector_not_ready', { status });
   const knownTools = toolNames(existing.connector.toolsCache ?? []);
   assertToolsAvailable(allowedTools, knownTools);
   const endpoint = await insertEndpoint(deps.db, {
