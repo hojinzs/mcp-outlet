@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EndpointStatus, EndpointSummary } from '../../api/types.ts';
-import { reauthBanners } from './status.ts';
+import { reauthBanners, reauthRequiredCount } from './status.ts';
 
 function endpoint(id: string, connectorId: string, status: EndpointStatus): EndpointSummary {
   return {
@@ -39,5 +39,19 @@ describe('재연결 배너', () => {
 
   it('없으면 빈 목록', () => {
     expect(reauthBanners([endpoint('e1', 'x', 'disabled')])).toEqual([]);
+  });
+});
+
+describe('재연결 메뉴 배지', () => {
+  it('재연결 필요 엔드포인트만 센다', () => {
+    expect(
+      reauthRequiredCount([
+        endpoint('e1', 'ga', 'reauth_required'),
+        endpoint('e2', 'ga', 'reauth_required'),
+        endpoint('e3', 'cms', 'connector_error'),
+        endpoint('e4', 'cms', 'active'),
+      ]),
+    ).toBe(2);
+    expect(reauthRequiredCount([])).toBe(0);
   });
 });

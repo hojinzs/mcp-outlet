@@ -51,3 +51,8 @@ export function reauthBanners(endpoints: readonly EndpointSummary[]): ReauthBann
   }
   return [...banners.values()];
 }
+
+// 레이아웃 메뉴 "내 엔드포인트" 배지에 쓰는 재연결 필요 엔드포인트 수 (index.md 재연결 알림, SCR-COM-01)
+export function reauthRequiredCount(endpoints: readonly EndpointSummary[]): number {
+  return endpoints.filter((endpoint) => endpoint.status === 'reauth_required').length;
+}

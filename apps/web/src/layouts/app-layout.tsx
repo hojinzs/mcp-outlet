@@ -3,7 +3,7 @@ import { ChevronDownIcon, MenuIcon, XIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { toast } from 'sonner';
-import { authOptionsQuery, meQuery } from '../api/queries.ts';
+import { authOptionsQuery, endpointsQuery, meQuery } from '../api/queries.ts';
 import type { Me } from '../api/types.ts';
 import { Loading } from '../components/loading.tsx';
 import { PageError } from '../components/page-error.tsx';
@@ -17,11 +17,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu.tsx';
+import { reauthRequiredCount } from '../features/endpoints/status.ts';
 import { logout } from '../lib/session.ts';
 import { cn } from '../lib/utils.ts';
 
 // SCR-COM-01 레이아웃. 아직 구현하지 않은 화면의 메뉴는 두지 않는다. 관리 메뉴는 admin에게만
-type MenuItem = { to: string; label: string; matches: string[] };
+// badge: 메뉴 옆 숫자. 0이면 그리지 않는다
+type MenuItem = { to: string; label: string; matches: string[]; badge?: number };
 
 const menu: MenuItem[] = [{ to: '/', label: '내 엔드포인트', matches: ['/', '/endpoints'] }];
 const adminMenu: MenuItem[] = [
@@ -92,7 +94,14 @@ function MenuGroup({
             isActive(pathname, item.matches) && 'bg-accent font-medium',
           )}
         >
-          {item.label}
+          <span className="flex items-center justify-between gap-2">
+            {item.label}
+            {item.badge ? (
+              <Badge variant="warning" aria-label={`재연결 필요 ${item.badge}개`}>
+                {item.badge}
+              </Badge>
+            ) : null}
+          </span>
         </NavLink>
       ))}
     </>
@@ -100,9 +109,13 @@ function MenuGroup({
 }
 
 function Navigation({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
+  // 재연결이 필요한 엔드포인트가 있으면 어느 화면에서든 알아채게 한다 (index.md 재연결 알림)
+  const endpoints = useQuery(endpointsQuery);
+  const reauth = endpoints.data ? reauthRequiredCount(endpoints.data) : 0;
+  const items = menu.map((item) => (item.to === '/' ? { ...item, badge: reauth } : item));
   return (
     <nav aria-label="메뉴" className="flex flex-col gap-1">
-      <MenuGroup title="내 작업" items={menu} onNavigate={onNavigate} />
+      <MenuGroup title="내 작업" items={items} onNavigate={onNavigate} />
       {me.role === 'admin' && <MenuGroup title="관리" items={adminMenu} onNavigate={onNavigate} />}
     </nav>
   );
