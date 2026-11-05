@@ -72,7 +72,9 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     const rows = await db
       .select({ toolName: auditLogs.toolName, result: auditLogs.result })
       .from(auditLogs)
-      .where(eq(auditLogs.endpointId, endpointId));
+      .where(eq(auditLogs.endpointId, endpointId))
+      // 기록 순서대로 비교한다. 정렬하지 않으면 부하가 걸릴 때 순서가 바뀐다
+      .orderBy(auditLogs.id);
     return rows;
   }
 
