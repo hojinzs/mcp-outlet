@@ -187,6 +187,11 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
     return url.toString();
   }
 
+  // discovery에 end_session_endpoint가 있는지. 없으면 화면이 "다른 계정으로 로그인"을 숨긴다 (SCR-COM-03)
+  async function supportsEndSession(): Promise<boolean> {
+    return (await load()).metadata.end_session_endpoint !== undefined;
+  }
+
   return {
     authorizationUrl,
     exchangeCode,
@@ -194,6 +199,7 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
     verifyAccessToken,
     issuer,
     endSessionUrl,
+    supportsEndSession,
   };
 }
 

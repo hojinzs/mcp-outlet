@@ -130,6 +130,18 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
     return reply.redirect(loginState.returnTo);
   });
 
+  // 세션 없는 접근 거부 화면도 읽는다. IdP 로그아웃을 지원하지 않으면 화면이 직접 로그아웃 안내를 띄운다
+  // (SCR-COM-03 결정 사항). discovery를 못 읽으면 지원하지 않는 것으로 답한다
+  app.get('/auth/options', async (request) => {
+    try {
+      return { idpLogout: await oidc.supportsEndSession() };
+    } catch (error) {
+      if (!(error instanceof OidcError)) throw error;
+      request.log.warn({ oidcError: error.kind }, 'idp options failed');
+      return { idpLogout: false };
+    }
+  });
+
   // 일반 로그아웃은 gateway 세션만, idp=true면 IdP 세션까지 끝낼 주소를 준다 (SCR-COM-01 결정 사항).
   // 세션이 없어도 성공한다. 접근 거부 화면의 "다른 계정으로 로그인"도 여기를 쓴다
   app.post('/auth/logout', async (request, reply) => {

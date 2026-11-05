@@ -244,6 +244,16 @@ describe.skipIf(!testDatabaseUrl)('관리 UI 로그인 (DB)', () => {
     expect(res.json()).toEqual({ redirectTo: '/admin/login' });
   });
 
+  it('IdP 로그아웃 지원 여부는 세션 없이도 받는다', async () => {
+    const s = await setup();
+    const supported = await s.app.inject('/auth/options');
+    expect(supported.statusCode).toBe(200);
+    expect(supported.json()).toEqual({ idpLogout: true });
+
+    const bare = await setup({ endSession: false });
+    expect((await bare.app.inject('/auth/options')).json()).toEqual({ idpLogout: false });
+  });
+
   it('관리자 API는 user에게 403, admin에게 200', async () => {
     const s = await setup();
     const userToken = sessionCookie(await login(s, member())) ?? '';
