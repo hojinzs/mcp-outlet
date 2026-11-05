@@ -2,7 +2,7 @@ import { CircleCheckIcon, CircleXIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Connector } from '../../api/types.ts';
-import { Badge } from '../../components/ui/badge.tsx';
+import { ConnectorStatusBadge } from '../../components/connector-status-badge.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card, CardDescription, CardTitle } from '../../components/ui/card.tsx';
 import { isPickable, unpickableGuide } from '../../features/connectors/builtin.ts';
@@ -67,7 +67,6 @@ function ExistingConnectors({
   return (
     <ul className="divide-y overflow-hidden rounded-lg border bg-background">
       {connectors.map((connector) => {
-        const disabled = connector.disabledAt !== null;
         const guide = unpickableGuide(connector, endpointIds);
         return (
           <li
@@ -96,16 +95,7 @@ function ExistingConnectors({
                 </div>
               )}
             </div>
-            {disabled ? (
-              <Badge variant="destructive">사용 중지됨</Badge>
-            ) : connector.status === 'pending' ? (
-              // 계정 연결 전에 먼저 저장한 커넥터
-              <Badge variant="secondary">연결 중</Badge>
-            ) : connector.status === 'error' ? (
-              <Badge variant="destructive">커넥터 오류</Badge>
-            ) : connector.status === 'reauth_required' ? (
-              <Badge variant="warning">재연결 필요</Badge>
-            ) : null}
+            <ConnectorStatusBadge connector={connector} />
             <Button
               size="sm"
               variant="outline"

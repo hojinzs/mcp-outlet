@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { builtinsQuery, connectorsQuery, endpointsQuery } from '../api/queries.ts';
 import type { Builtin, Connector, EndpointSummary } from '../api/types.ts';
+import { ConnectorStatusBadge } from '../components/connector-status-badge.tsx';
 import { CopyButton } from '../components/copy-button.tsx';
 import { DeleteConnectorDialog } from '../components/delete-connector-dialog.tsx';
 import { Loading } from '../components/loading.tsx';
@@ -126,8 +127,9 @@ function OrphanConnectors({
       <div>
         <h2 className="text-lg font-semibold">엔드포인트 없는 커넥터</h2>
         <p className="text-sm text-muted-foreground">
-          엔드포인트 추가에서 "내 커넥터에서 고르기"로 다시 쓸 수 있습니다. 쓰지 않으면 지우세요.
-          커넥터 수에도 상한이 있습니다.
+          정상인 커넥터는 엔드포인트 추가의 "내 커넥터에서 고르기"로 다시 쓸 수 있고, 정상이 아닌
+          커넥터는 "다시 연결·연결 테스트"로 고친 뒤 씁니다. 쓰지 않으면 지우세요. 커넥터 수에도
+          상한이 있습니다.
         </p>
       </div>
       <ul className="divide-y rounded-lg border bg-background text-sm">
@@ -145,6 +147,7 @@ function OrphanConnectors({
                   )}
                 </div>
               </div>
+              <ConnectorStatusBadge connector={connector} />
               {link && (
                 <Button size="sm" variant="outline" asChild>
                   <Link to={link.to}>{link.label}</Link>
