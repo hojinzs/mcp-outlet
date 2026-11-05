@@ -12,6 +12,7 @@ import {
   isPickable,
   newEndpointReturnTo,
   oauthMethodOf,
+  resumeReason,
   unpickableGuide,
   unpickableReason,
   withoutConnectOutcome,
@@ -164,6 +165,26 @@ describe('내장 서비스 목록', () => {
     expect(
       unpickableGuide({ ...connector, disabledAt: '2026-11-01T00:00:00Z' }, endpointIds)?.link,
     ).toBeNull();
+  });
+
+  it('이어하기 화면은 연결 테스트에 성공하면 테스트 전 사유를 지운다', () => {
+    const connector = {
+      id: 'c1',
+      disabledAt: null,
+      status: 'error',
+      endpointCount: 0,
+    } as Connector;
+    expect(resumeReason(connector, undefined)).toContain('실패');
+    // 다시 받기 전의 오류 상태 커넥터여도 방금 테스트가 성공했으면 사유를 보이지 않는다
+    expect(resumeReason(connector, 'ok')).toBeNull();
+    // 테스트가 실패하면 다시 받은 커넥터의 사유를 보인다
+    expect(resumeReason({ ...connector, status: 'reauth_required' }, 'auth_failed')).toContain(
+      '만료',
+    );
+    expect(resumeReason({ ...connector, status: 'ok' }, undefined)).toBeNull();
+    expect(resumeReason({ ...connector, disabledAt: '2026-11-01T00:00:00Z' }, 'ok')).toContain(
+      '사용 중지',
+    );
   });
 });
 

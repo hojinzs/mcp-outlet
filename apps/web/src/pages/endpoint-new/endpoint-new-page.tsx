@@ -37,6 +37,7 @@ import {
   isPickable,
   newEndpointReturnTo,
   oauthMethodOf,
+  resumeReason,
   withoutConnectOutcome,
 } from '../../features/connectors/builtin.ts';
 import {
@@ -75,7 +76,8 @@ type Prepared =
   | { kind: 'existing'; connector: Connector; tools: Tool[] }
   | { kind: 'new'; input: NewConnectorInput; tools: Tool[] };
 
-// 업스트림 동의에서 돌아왔거나 정상이 아닌 커넥터로 들어온 경우 (?connector={id})
+// 업스트림 동의에서 돌아왔거나 정상이 아닌 커넥터로 들어온 경우 (?connector={id}).
+// connector는 들어올 때의 값이다. 화면에는 테스트·저장 뒤 다시 받은 목록의 커넥터를 쓴다
 type Resume = { connector: Connector; notice: string | null };
 
 const steps: { step: Step; label: string }[] = [
@@ -169,6 +171,9 @@ export function EndpointNewPage() {
   const oauth = useOAuthStart();
 
   const connectorList = connectors.data ?? [];
+  const resumeConnector = resume
+    ? (connectorList.find((connector) => connector.id === resume.connector.id) ?? resume.connector)
+    : null;
   const serviceNames = serviceNamesByConnector(connectors.data, builtins.data);
   const endpointIds = endpoints.data
     ? new Map(endpoints.data.map((endpoint) => [endpoint.connector.id, endpoint.id]))
@@ -306,11 +311,11 @@ export function EndpointNewPage() {
   }, [presetId, connectors.data]);
 
   function nextFromResume() {
-    if (!resume || resumeTest.data?.result !== 'ok') return;
-    if (prepared?.kind !== 'existing' || prepared.connector.id !== resume.connector.id) {
+    if (!resumeConnector || resumeTest.data?.result !== 'ok') return;
+    if (prepared?.kind !== 'existing' || prepared.connector.id !== resumeConnector.id) {
       setSelected(new Set());
     }
-    goToTools({ kind: 'existing', connector: resume.connector, tools: resumeTest.data.tools });
+    goToTools({ kind: 'existing', connector: resumeConnector, tools: resumeTest.data.tools });
   }
 
   function reconnect(client?: OAuthClient) {
@@ -432,7 +437,7 @@ export function EndpointNewPage() {
       : prepared.input.name
     : '';
   const connectError = oauthCreate.error ?? oauth.start.error;
-  const resumeBuiltin = builtins.data?.find((builtin) => builtin.key === resume?.connector.builtin);
+  const resumeBuiltin = builtins.data?.find((builtin) => builtin.key === resumeConnector?.builtin);
 
   return (
     <div className="flex flex-col gap-6">
@@ -446,15 +451,16 @@ export function EndpointNewPage() {
         <StepIndicator current={step} onGo={setStep} />
       </div>
 
-      {step === 1 && resume && (
+      {step === 1 && resume && resumeConnector && (
         <ConnectorResume
-          connector={resume.connector}
+          connector={resumeConnector}
           serviceName={resumeBuiltin?.name ?? null}
           oauthMethod={oauthMethodOf(resumeBuiltin)}
           notice={resume.notice}
-          test={resumeTestState(resume.connector.runtime, resumeTest.data, resumeTest.error)}
+          reason={resumeReason(resumeConnector, resumeTest.data?.result)}
+          test={resumeTestState(resumeConnector.runtime, resumeTest.data, resumeTest.error)}
           testing={resumeTest.isPending}
-          onTest={() => resumeTest.mutate(resume.connector.id)}
+          onTest={() => resumeTest.mutate(resumeConnector.id)}
           onNext={nextFromResume}
           onReconnect={reconnect}
           reconnecting={oauth.start.isPending || oauth.redirecting}

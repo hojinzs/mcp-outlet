@@ -3,6 +3,7 @@ import type {
   Builtin,
   BuiltinAuthMethod,
   ConnectionTestFailure,
+  ConnectionTestResponse,
   Connector,
   ConnectorRuntime,
 } from '../../api/types.ts';
@@ -136,6 +137,16 @@ export function unpickableReason(connector: Connector): string | null {
   if (connector.disabledAt !== null) return '관리자가 사용 중지한 커넥터입니다';
   if (connector.status === 'ok') return null;
   return unpickableReasons[connector.status];
+}
+
+// 이어하기 화면의 상태 사유. 이 화면에서 한 연결 테스트가 성공했으면 테스트 전 사유를 지운다.
+// 커넥터는 테스트 뒤 다시 받은 것을 넘긴다 (SCR-EP-02)
+export function resumeReason(
+  connector: Connector,
+  latestTest: ConnectionTestResponse['result'] | undefined,
+): string | null {
+  if (connector.disabledAt === null && latestTest === 'ok') return null;
+  return unpickableReason(connector);
 }
 
 // 엔드포인트 추가의 이어하기 화면. 정상이 아니면 다시 연결·연결 테스트부터, 정상이면 툴 선택으로 간다

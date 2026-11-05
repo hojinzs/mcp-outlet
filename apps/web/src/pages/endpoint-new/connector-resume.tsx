@@ -4,7 +4,6 @@ import { OAuthAppGuide } from '../../components/builtin/oauth-app-guide.tsx';
 import { OAuthClientFields } from '../../components/builtin/oauth-client-fields.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card, CardDescription, CardTitle } from '../../components/ui/card.tsx';
-import { unpickableReason } from '../../features/connectors/builtin.ts';
 import { connectorKindLabel } from '../../features/endpoints/connector-kind.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { TestBar, type TestState } from './connector-step.tsx';
@@ -19,6 +18,7 @@ export function ConnectorResume({
   serviceName,
   oauthMethod,
   notice,
+  reason,
   test,
   testing,
   onTest,
@@ -32,6 +32,8 @@ export function ConnectorResume({
   serviceName: string | null;
   oauthMethod: OAuthMethod | undefined;
   notice: string | null;
+  // 고를 수 없는 사유. 테스트에 성공했으면 null (resumeReason)
+  reason: string | null;
   test: TestState;
   testing: boolean;
   onTest: () => void;
@@ -46,7 +48,6 @@ export function ConnectorResume({
   const canReconnect = connector.auth.type === 'oauth2' && oauthMethod !== undefined;
   const provider = oauthMethod?.provider ?? '';
   const account = connector.credential.account;
-  const reason = unpickableReason(connector);
 
   return (
     <Card>
