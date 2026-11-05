@@ -41,6 +41,19 @@ describe('rewriteSse', () => {
     expect(out).toEqual([': ping\n\n', 'data: hello\n\n', 'retry: 1000\n\n']);
   });
 
+  it('rewrite가 undefined면 data를 빼고 id만 남기며, id도 없으면 이벤트를 내보내지 않는다', async () => {
+    const drop = (message: unknown) => ((message as { drop?: boolean }).drop ? undefined : message);
+    const out = await run(
+      [
+        'event: message\nid: 7\ndata: {"drop":true}\n\n',
+        'data: {"drop":true}\n\n',
+        'data: {"n":1}\n\n',
+      ],
+      drop,
+    );
+    expect(out).toEqual(['event: message\nid: 7\n\n', 'data: {"n":1}\n\n']);
+  });
+
   it('이벤트가 끝나는 즉시 내보낸다', async () => {
     const encoder = new TextEncoder();
     let push: (text: string) => void = () => {};

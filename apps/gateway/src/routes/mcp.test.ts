@@ -317,6 +317,43 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     }
   });
 
+  it('resources/list·prompts/get은 업스트림에 보내지 않고 거부한다', async () => {
+    const { url, token, endpoint } = await newEndpoint();
+    const { client, transport } = await connect(url, token);
+    try {
+      const resources = await client.listResources().catch((error: unknown) => error);
+      expect(resources).toBeInstanceOf(McpError);
+      expect((resources as McpError).code).toBe(-32601);
+      const prompt = await client.getPrompt({ name: 'summarize' }).catch((error: unknown) => error);
+      expect(prompt).toBeInstanceOf(McpError);
+      expect((prompt as McpError).code).toBe(-32601);
+    } finally {
+      await transport.terminateSession();
+      await client.close();
+    }
+    const forwarded = upstream.bodies.join('\n');
+    expect(forwarded).not.toContain('resources/list');
+    expect(forwarded).not.toContain('prompts/get');
+    // 툴 호출이 아니라 감사 로그에 남기지 않는다
+    expect(await auditRows(endpoint.id)).toEqual([]);
+  });
+
+  it('initialize capabilities에서 resources·prompts를 뺀다', async () => {
+    for (const target of [upstream, jsonUpstream]) {
+      const { url, token } = await newEndpoint({ upstream: target, token: target === upstream });
+      const { client } = await connect(url, token);
+      try {
+        const capabilities = client.getServerCapabilities();
+        expect(capabilities?.tools).toBeDefined();
+        expect(capabilities?.logging).toBeDefined();
+        expect(capabilities?.resources).toBeUndefined();
+        expect(capabilities?.prompts).toBeUndefined();
+      } finally {
+        await client.close();
+      }
+    }
+  });
+
   it('배치에 목록 밖 호출이 섞이면 배치 전체를 거부한다', async () => {
     const { url, token, endpoint } = await newEndpoint();
     const res = await post(url, token, [

@@ -1,5 +1,6 @@
 // SSE 응답의 이벤트마다 data(JSON-RPC 메시지)를 바꿔 쓰는 스트림 (F-RUN-01 SSE 무버퍼 전달).
 // 이벤트 하나가 끝나는 즉시 내보내고 그 이상 모으지 않는다. JSON이 아닌 data는 손대지 않는다.
+// rewrite가 undefined를 돌려주면 그 메시지는 클라이언트에 보내지 않는다.
 // 끝나지 않은 이벤트가 상한을 넘으면 스트림을 오류로 끊는다(업스트림도 함께 끊긴다)
 
 export class SseEventTooLarge extends Error {
@@ -21,8 +22,11 @@ function rewriteEvent(block: string, rewrite: (message: unknown) => unknown): st
     return `${block}\n\n`;
   }
   const others = lines.filter((line) => !line.startsWith('data:'));
+  const rewritten = rewrite(message);
+  // 뺀 메시지는 data 없이 id 등만 남겨 재개 위치(Last-Event-ID)를 지킨다. data가 없는 이벤트는 전달되지 않는다
+  if (rewritten === undefined) return others.length > 0 ? `${others.join('\n')}\n\n` : '';
   const head = others.length > 0 ? `${others.join('\n')}\n` : '';
-  return `${head}data: ${JSON.stringify(rewrite(message))}\n\n`;
+  return `${head}data: ${JSON.stringify(rewritten)}\n\n`;
 }
 
 export function rewriteSse(
@@ -47,7 +51,8 @@ export function rewriteSse(
     for (let end = normalized.indexOf('\n\n'); end >= 0; end = normalized.indexOf('\n\n')) {
       const block = normalized.slice(0, end);
       normalized = normalized.slice(end + 2);
-      controller.enqueue(encoder.encode(rewriteEvent(block, rewrite)));
+      const event = rewriteEvent(block, rewrite);
+      if (event) controller.enqueue(encoder.encode(event));
     }
   }
 

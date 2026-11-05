@@ -64,6 +64,90 @@ describe('planInbound', () => {
   });
 });
 
+describe('리소스·프롬프트 차단', () => {
+  const allowed = ['read_item'];
+  const request = (id: number, method: string) => ({ jsonrpc: '2.0', id, method, params: {} });
+
+  it('resources/list·prompts/get은 업스트림에 보내지 않고 -32601로 거부한다', () => {
+    for (const method of [
+      'resources/list',
+      'resources/read',
+      'resources/templates/list',
+      'resources/subscribe',
+      'resources/unsubscribe',
+      'prompts/list',
+      'prompts/get',
+      'completion/complete',
+    ]) {
+      expect(planInbound(request(1, method), allowed)).toEqual({
+        kind: 'deny',
+        deniedTools: [],
+        response: { jsonrpc: '2.0', id: 1, error: { code: -32601, message: expect.any(String) } },
+      });
+    }
+  });
+
+  it('배치에 섞이면 배치 전체를 거부하고, 목록 밖 툴 호출이 함께 있으면 감사 대상으로 알린다', () => {
+    const plan = planInbound(
+      [call(1, 'read_item'), request(2, 'prompts/get'), call(3, 'delete_item')],
+      allowed,
+    );
+    expect(plan.kind).toBe('deny');
+    if (plan.kind !== 'deny') return;
+    expect(plan.deniedTools).toEqual(['delete_item']);
+    expect(plan.response).toEqual([
+      expect.objectContaining({ id: 1, error: expect.objectContaining({ code: -32600 }) }),
+      expect.objectContaining({ id: 2, error: expect.objectContaining({ code: -32601 }) }),
+      expect.objectContaining({ id: 3, error: expect.objectContaining({ code: -32602 }) }),
+    ]);
+  });
+
+  it('id 없는 리소스 메서드도 보내지 않는다', () => {
+    expect(planInbound({ jsonrpc: '2.0', method: 'resources/list' }, allowed)).toEqual({
+      kind: 'deny',
+      deniedTools: [],
+      response: null,
+    });
+  });
+
+  it('비슷한 이름의 다른 메서드는 막지 않는다', () => {
+    expect(planInbound(request(1, 'tools/list'), allowed).kind).toBe('forward');
+    expect(planInbound(request(1, 'resourcesX/list'), allowed).kind).toBe('forward');
+  });
+
+  const tap = () => createResponseTap({ kind: 'forward', toolCalls: new Map() }, allowed, () => {});
+
+  it('initialize capabilities에서 resources·prompts를 뺀다', () => {
+    const result = {
+      protocolVersion: '2025-06-18',
+      capabilities: {
+        tools: { listChanged: true },
+        logging: {},
+        resources: { subscribe: true },
+        prompts: {},
+        completions: {},
+      },
+      serverInfo: { name: 'up', version: '1' },
+    };
+    expect(tap().rewrite({ jsonrpc: '2.0', id: 0, result })).toEqual({
+      jsonrpc: '2.0',
+      id: 0,
+      result: { ...result, capabilities: { tools: { listChanged: true }, logging: {} } },
+    });
+  });
+
+  it('업스트림의 리소스·프롬프트 알림은 클라이언트에 보내지 않는다', () => {
+    const notify = (method: string) => ({ jsonrpc: '2.0', method, params: {} });
+    expect(tap().rewrite(notify('notifications/resources/updated'))).toBeUndefined();
+    expect(tap().rewrite(notify('notifications/prompts/list_changed'))).toBeUndefined();
+    const progress = notify('notifications/progress');
+    expect(tap().rewrite([notify('notifications/resources/list_changed'), progress])).toEqual([
+      progress,
+    ]);
+    expect(tap().rewrite([notify('notifications/resources/list_changed')])).toBeUndefined();
+  });
+});
+
 describe('createResponseTap', () => {
   it('tools/list 결과를 허용목록으로 거르고 tools/call 결과를 알린다', () => {
     const plan = planInbound(

@@ -47,6 +47,13 @@ function createMcpServer(): McpServer {
       return { content: [{ type: 'text', text: `counted to ${to}` }] };
     },
   );
+  // 엔드포인트가 막아야 하는 리소스·프롬프트 (F-EP-02 리소스·프롬프트 차단)
+  server.registerResource('secret-doc', 'fake://secret', { mimeType: 'text/plain' }, async () => ({
+    contents: [{ uri: 'fake://secret', text: 'upstream secret resource' }],
+  }));
+  server.registerPrompt('summarize', { description: '요약한다' }, async () => ({
+    messages: [{ role: 'user', content: { type: 'text', text: 'upstream secret prompt' } }],
+  }));
   return server;
 }
 

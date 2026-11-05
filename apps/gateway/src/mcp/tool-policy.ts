@@ -11,7 +11,24 @@ import { MAX_TOOL_NAME_LENGTH } from './limits.ts';
 // 엔드포인트 허용목록 적용 (F-EP-02): 목록 밖 tools/call은 업스트림에 보내지 않고,
 // tools/list 응답에서는 목록 밖 툴을 뺀다. 런타임과 상관없이 메시지 단위로 동작한다.
 // tools/list 응답은 요청 id가 아니라 결과 모양(result.tools 배열)으로 알아본다. GET 스트림 재개
-// (Last-Event-ID)로 다시 오는 응답은 이 요청에서 보낸 id와 짝지을 수 없어서다
+// (Last-Event-ID)로 다시 오는 응답은 이 요청에서 보낸 id와 짝지을 수 없어서다.
+// 리소스·프롬프트는 툴만 고른 엔드포인트의 허용목록을 우회하므로 막는다: 요청은 거부하고,
+// initialize 응답 capabilities와 업스트림 알림에서도 뺀다 (F-EP-02 리소스·프롬프트 차단)
+
+// completion/complete는 프롬프트 인자·리소스 템플릿 자동완성이라 함께 막는다
+const BLOCKED_METHOD = /^(resources|prompts)\/|^completion\/complete$/;
+const BLOCKED_NOTIFICATION = /^notifications\/(resources|prompts)\//;
+const BLOCKED_CAPABILITIES = ['resources', 'prompts', 'completions'];
+
+function methodOf(message: unknown): unknown {
+  return (message as { method?: unknown } | null)?.method;
+}
+
+// id가 없는 것(알림)도 막는다
+function isBlockedMethod(message: unknown): boolean {
+  const method = methodOf(message);
+  return typeof method === 'string' && BLOCKED_METHOD.test(method);
+}
 
 export type ToolCallOutcome = 'ok' | 'error';
 
@@ -59,29 +76,45 @@ export function auditToolName(name: string): string {
   return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }
 
+// 메시지 하나를 거부하는 이유. 거부하지 않으면 null
+function denialOf(
+  message: unknown,
+  allowed: ReadonlySet<string>,
+): { code: number; message: string } | null {
+  if (isToolCall(message) && !allowed.has(toolNameOf(message))) {
+    return {
+      code: RPC_ERROR.invalidParams,
+      message: `허용되지 않은 툴입니다: ${toolNameOf(message)}`,
+    };
+  }
+  if (isBlockedMethod(message)) {
+    return {
+      code: RPC_ERROR.methodNotFound,
+      message: '이 엔드포인트는 리소스와 프롬프트를 제공하지 않습니다.',
+    };
+  }
+  return null;
+}
+
 // 배치에 허용되지 않은 호출이 하나라도 있으면 배치 전체를 보내지 않는다.
 // 일부만 보내면 업스트림 응답 스트림에 거부 응답을 끼워 넣어야 해서다
 export function planInbound(body: unknown, allowedTools: readonly string[]): InboundPlan {
   const allowed = new Set(allowedTools);
   const messages = Array.isArray(body) ? body : [body];
-  const deniedTools = messages
-    .filter(isToolCall)
-    .map(toolNameOf)
-    .filter((name) => !allowed.has(name));
 
-  if (deniedTools.length > 0) {
+  if (messages.some((message) => denialOf(message, allowed) !== null)) {
+    const deniedTools = messages
+      .filter(isToolCall)
+      .map(toolNameOf)
+      .filter((name) => !allowed.has(name));
     const responses = messages.filter(isRequest).map((message) => {
-      const denied = message.method === 'tools/call' && !allowed.has(toolNameOf(message));
-      return denied
-        ? errorResponse(
-            message.id,
-            RPC_ERROR.invalidParams,
-            `허용되지 않은 툴입니다: ${toolNameOf(message)}`,
-          )
+      const denial = denialOf(message, allowed);
+      return denial
+        ? errorResponse(message.id, denial.code, denial.message)
         : errorResponse(
             message.id,
             RPC_ERROR.invalidRequest,
-            '같은 배치에 허용되지 않은 툴 호출이 있어 처리하지 않았습니다.',
+            '같은 배치에 허용되지 않은 요청이 있어 처리하지 않았습니다.',
           );
     });
     const response = Array.isArray(body) ? responses : (responses[0] ?? null);
@@ -104,7 +137,25 @@ function filterToolsList(result: unknown, allowed: ReadonlySet<string>): unknown
   };
 }
 
-// 업스트림 응답 메시지를 고쳐 쓰고 tools/call 결과를 알린다.
+// initialize 응답은 결과 모양(protocolVersion과 capabilities)으로 알아본다. tools/list와 같은 이유다
+function stripCapabilities(result: unknown): unknown {
+  const { protocolVersion, capabilities } = (result ?? {}) as Record<string, unknown>;
+  if (typeof protocolVersion !== 'string' || typeof capabilities !== 'object' || !capabilities) {
+    return result;
+  }
+  const kept = Object.fromEntries(
+    Object.entries(capabilities).filter(([key]) => !BLOCKED_CAPABILITIES.includes(key)),
+  );
+  return { ...(result as object), capabilities: kept };
+}
+
+function isBlockedNotification(message: unknown): boolean {
+  const method = methodOf(message);
+  return typeof method === 'string' && BLOCKED_NOTIFICATION.test(method);
+}
+
+// 업스트림 응답 메시지를 고쳐 쓰고 tools/call 결과를 알린다. 클라이언트에 보내지 않을 메시지는
+// undefined로 돌려준다(배치면 빼고, 남는 것이 없으면 undefined).
 // 응답이 오기 전에 스트림이 끝나면 settle()이 남은 호출을 오류로 알린다
 export function createResponseTap(
   plan: Extract<InboundPlan, { kind: 'forward' }>,
@@ -115,6 +166,7 @@ export function createResponseTap(
   const pending = new Map(plan.toolCalls);
 
   function rewriteOne(message: unknown): unknown {
+    if (isBlockedNotification(message)) return undefined;
     if (!isResponse(message)) return message;
     const key = idKey(message.id);
     const toolName = pending.get(key);
@@ -125,12 +177,14 @@ export function createResponseTap(
       onToolCall(toolName, isError ? 'error' : 'ok');
     }
     if (message.result === undefined) return message;
-    return { ...message, result: filterToolsList(message.result, allowed) };
+    return { ...message, result: stripCapabilities(filterToolsList(message.result, allowed)) };
   }
 
   return {
     rewrite(message: unknown): unknown {
-      return Array.isArray(message) ? message.map(rewriteOne) : rewriteOne(message);
+      if (!Array.isArray(message)) return rewriteOne(message);
+      const kept = message.map(rewriteOne).filter((item) => item !== undefined);
+      return kept.length > 0 ? kept : undefined;
     },
     settle(): void {
       for (const toolName of pending.values()) onToolCall(toolName, 'error');

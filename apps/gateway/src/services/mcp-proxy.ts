@@ -221,7 +221,8 @@ export function createMcpProxy(deps: McpProxyDeps) {
     }
     if (plan.kind === 'deny') {
       for (const toolName of deniedAuditNames(plan.deniedTools)) recordToolCall(toolName, 'denied');
-      touch();
+      // 리소스·프롬프트만 거부했으면 툴 호출이 아니라 마지막 호출 시각을 바꾸지 않는다
+      if (plan.deniedTools.length > 0) touch();
       return plan.response
         ? jsonReply(200, plan.response)
         : { status: 202, headers: {}, body: null };
@@ -310,13 +311,16 @@ export function createMcpProxy(deps: McpProxyDeps) {
         return failureReply(request, kind, endpoint.id);
       }
       const text = read.text;
-      let body = text;
+      let body: string | null = text;
       try {
-        body = JSON.stringify(tap.rewrite(JSON.parse(text)));
+        const rewritten = tap.rewrite(JSON.parse(text));
+        // 걸러서 보낼 메시지가 남지 않으면(리소스·프롬프트 알림뿐이면) 본문 없이 답한다
+        body = rewritten === undefined ? null : JSON.stringify(rewritten);
       } catch {
         // JSON이 아니면 고치지 않고 넘긴다
       }
       tap.settle();
+      if (body === null) return { status: 202, headers, body: null };
       return { status, headers, body };
     }
     // 그 밖의 본문은 MCP 응답이 아니다

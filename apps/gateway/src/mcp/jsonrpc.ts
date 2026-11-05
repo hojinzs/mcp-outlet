@@ -20,6 +20,8 @@ export type JsonRpcResponse = {
 export const RPC_ERROR = {
   parseError: -32700,
   invalidRequest: -32600,
+  // 엔드포인트가 제공하지 않는 기능(리소스·프롬프트). capability가 없는 메서드에 MCP가 쓰는 코드
+  methodNotFound: -32601,
   invalidParams: -32602,
   // 업스트림 연결·인증 실패 (서버 정의 영역)
   upstream: -32000,
