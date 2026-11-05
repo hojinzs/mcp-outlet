@@ -15,6 +15,8 @@ const detail: EndpointDetail = {
     url: 'https://cms.test/mcp',
     builtin: null,
     disabledReason: null,
+    lastTestedAt: null,
+    lastTestResult: null,
   },
   toolCounts: { allowed: 1, total: 3, new: 1 },
   lastCalledAt: null,

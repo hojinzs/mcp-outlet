@@ -16,6 +16,8 @@ function endpoint(id: string, connectorId: string, status: EndpointStatus): Endp
       url: null,
       builtin: 'google-analytics',
       disabledReason: null,
+      lastTestedAt: null,
+      lastTestResult: null,
     },
     toolCounts: { allowed: 1, total: 1, new: 0 },
     lastCalledAt: null,

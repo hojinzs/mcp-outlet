@@ -19,8 +19,10 @@ import {
   unpickableReason,
   withoutConnectOutcome,
 } from '../../features/connectors/builtin.ts';
+import { lastTestView } from '../../features/connectors/last-test.ts';
 import { connectionTestMessage } from '../../features/connectors/remote-form.ts';
 import { formatDateTime } from '../../lib/format.ts';
+import { cn } from '../../lib/utils.ts';
 import { BuiltinSettings } from './builtin-settings.tsx';
 import { ConnectorName } from './connector-name.tsx';
 import { DeleteConnector } from './delete-connector.tsx';
@@ -271,7 +273,7 @@ export function ConnectorSettings({
   }
 
   const data = connector.data;
-  const lastResult = data.lastTestResult;
+  const lastTest = lastTestView(data);
   const anotherBlocked = unpickableReason(data);
   return (
     <Card>
@@ -300,13 +302,14 @@ export function ConnectorSettings({
         <Button variant="outline" onClick={() => retest.mutate()} disabled={retest.isPending}>
           {retest.isPending ? '테스트 중' : '연결 테스트'}
         </Button>
-        <span className="text-muted-foreground">
-          마지막 결과:{' '}
-          {lastResult === null
-            ? '없음'
-            : lastResult === 'ok'
-              ? `성공 · ${formatDateTime(data.lastTestedAt)}`
-              : `${connectorTestMessage(data.runtime, lastResult)} · ${formatDateTime(data.lastTestedAt)}`}
+        <span
+          className={cn(
+            'text-muted-foreground',
+            lastTest.tone === 'transient' && 'text-warning',
+            lastTest.tone === 'failed' && 'text-destructive',
+          )}
+        >
+          {lastTest.text}
         </span>
         {/* 정상 커넥터만 엔드포인트를 더 만들 수 있다 (SCR-EP-03, SCR-EP-02 결정 사항) */}
         {anotherBlocked === null ? (
@@ -319,6 +322,7 @@ export function ConnectorSettings({
           </span>
         )}
       </div>
+      {lastTest.note && <p className="-mt-2 text-sm text-muted-foreground">{lastTest.note}</p>}
       <DeleteConnector connector={{ id: data.id, name: data.name }} onDeleting={onDeleting} />
     </Card>
   );

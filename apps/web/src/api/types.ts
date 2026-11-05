@@ -64,6 +64,8 @@ export type EndpointSummary = {
     builtin: string | null;
     // 관리자가 사용 중지한 사유 (status가 disabled일 때)
     disabledReason: string | null;
+    lastTestedAt: string | null;
+    lastTestResult: ConnectionTestResult | null;
   };
   toolCounts: { allowed: number; total: number; new: number };
   lastCalledAt: string | null;
