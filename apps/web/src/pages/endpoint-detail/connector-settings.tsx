@@ -21,6 +21,7 @@ import { connectionTestMessage } from '../../features/connectors/remote-form.ts'
 import { formatDateTime } from '../../lib/format.ts';
 import { BuiltinSettings } from './builtin-settings.tsx';
 import { ConnectorName } from './connector-name.tsx';
+import { DeleteConnector } from './delete-connector.tsx';
 
 // SCR-EP-03 커넥터 설정. 주소·토큰·서비스 계정 키를 바꾸면 gateway가 연결 테스트를 통과해야 저장한다
 
@@ -215,10 +216,13 @@ export function ConnectorSettings({
   endpointId,
   connectorId,
   endpointCount,
+  onDeleting,
 }: {
   endpointId: string;
   connectorId: string;
   endpointCount: number;
+  // 삭제 후 이동할 때 저장하지 않은 변경 확인을 띄우지 않게 한다
+  onDeleting: () => void;
 }) {
   const queryClient = useQueryClient();
   const connector = useQuery(connectorQuery(connectorId));
@@ -304,6 +308,7 @@ export function ConnectorSettings({
           <Link to={`/endpoints/new?connector=${connectorId}`}>이 커넥터로 엔드포인트 하나 더</Link>
         </Button>
       </div>
+      <DeleteConnector connector={{ id: data.id, name: data.name }} onDeleting={onDeleting} />
     </Card>
   );
 }

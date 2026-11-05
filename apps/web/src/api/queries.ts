@@ -156,6 +156,8 @@ export const requests = {
     api<ConnectionTestResponse>(`/api/connectors/${id}/test`, { method: 'POST' }),
   updateConnector: (id: string, patch: RemoteConnectorPatch | BuiltinConnectorPatch) =>
     api<Connector>(`/api/connectors/${id}`, { method: 'PATCH', body: patch }),
+  // 커넥터의 엔드포인트·자격증명도 함께 지워진다 (F-CON-04)
+  deleteConnector: (id: string) => api<void>(`/api/connectors/${id}`, { method: 'DELETE' }),
   createEndpoint: (input: CreateEndpointInput) =>
     api<EndpointDetail>('/api/endpoints', { method: 'POST', body: input }),
   updateEndpoint: (id: string, patch: EndpointPatch) =>

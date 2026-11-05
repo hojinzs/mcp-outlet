@@ -208,6 +208,7 @@ export function EndpointDetailPage() {
         endpointId={data.id}
         connectorId={data.connector.id}
         endpointCount={data.connectorEndpointCount}
+        onDeleting={() => flushSync(() => setLeaving(true))}
       />
       <ExposedTools endpoint={data} draft={draft} onDraftChange={setDraft} />
       <EnabledSwitch endpoint={data} />
