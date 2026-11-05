@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, notExists } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import type { CachedTool } from '../../runtimes/types.ts';
 import type { DbOrTx } from '../client.ts';
 import { connectors, credentials, endpoints, users } from '../schema.ts';
 
@@ -119,6 +120,19 @@ export async function setConnectorHealth(
         ne(connectors.status, status),
       ),
     );
+}
+
+// 프록시를 지나는 tools/list로 툴 캐시를 바꾼다. 사용자가 바꾼 것이 아니라 updatedAt은 그대로 둔다
+export async function setConnectorToolsCache(
+  db: DbOrTx,
+  id: string,
+  tools: CachedTool[],
+  now: Date,
+): Promise<void> {
+  await db
+    .update(connectors)
+    .set({ toolsCache: tools, toolsCachedAt: now, updatedAt: connectors.updatedAt })
+    .where(eq(connectors.id, id));
 }
 
 // 관리자 화면: 한 사용자의 커넥터와 사용 중지한 관리자 (SCR-ADM-04). 자격증명 테이블은 읽지 않는다

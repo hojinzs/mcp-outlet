@@ -1,12 +1,17 @@
 import type { SecretBox } from '../crypto/secrets.ts';
 import type { Db } from '../db/client.ts';
 import { insertAuditLog } from '../db/queries/audit-logs.ts';
-import { type ConnectorRow, setConnectorHealth } from '../db/queries/connectors.ts';
+import {
+  type ConnectorRow,
+  setConnectorHealth,
+  setConnectorToolsCache,
+} from '../db/queries/connectors.ts';
 import { type EndpointRow, touchLastCalled } from '../db/queries/endpoints.ts';
 import { type FailureKind, failureMessage, toolFailureResult } from '../mcp/failures.ts';
 import { errorResponse, isRequest, type JsonRpcResponse, RPC_ERROR } from '../mcp/jsonrpc.ts';
 import { type BoundedText, MAX_UPSTREAM_MESSAGE_BYTES, readBoundedText } from '../mcp/limits.ts';
 import { rewriteSse } from '../mcp/sse.ts';
+import { sameTools, toolsFromListResult } from '../mcp/tool-cache.ts';
 import {
   auditToolName,
   createResponseTap,
@@ -29,6 +34,7 @@ export type McpProxyDeps = {
   publicBaseUrl: string;
   // JSON 응답 본문을 다 받을 때까지의 상한. 응답 헤더 상한(safe-fetch)과 같은 UPSTREAM_TIMEOUT_MS
   upstreamTimeoutMs: number;
+  now: () => Date;
   // 로그에는 분류값만 남긴다
   log: { warn: (fields: Record<string, unknown>, message: string) => void };
 };
@@ -207,7 +213,22 @@ export function createMcpProxy(deps: McpProxyDeps) {
       if (builtin && outcome === 'ok') markHealth('ok');
     }
 
-    let plan: ReturnType<typeof planInbound> = { kind: 'forward', toolCalls: new Map() };
+    // 원격 커넥터는 지나가는 tools/list(거르기 전 원본)로 툴 캐시를 갱신한다. 바뀐 경우에만 쓴다.
+    // 내장 커넥터의 툴은 커넥터 정의에서 온다 (SCR-EP-01·03 "새 툴")
+    let cachedTools = connector.toolsCache ?? [];
+    function onToolsList(result: unknown): void {
+      if (connector.manifest.runtime !== 'remote') return;
+      const tools = toolsFromListResult(result);
+      if (!tools || sameTools(tools, cachedTools)) return;
+      cachedTools = tools;
+      background(setConnectorToolsCache(deps.db, connector.id, tools, deps.now()), 'tools_cache');
+    }
+
+    let plan: ReturnType<typeof planInbound> = {
+      kind: 'forward',
+      toolCalls: new Map(),
+      toolLists: new Set(),
+    };
     // 허용목록을 판정한 파싱 결과를 다시 직렬화해 보낸다. 원문을 보내면 중복 키를 업스트림이
     // 다르게 읽어(앞의 값을 쓰는 파서) 판정한 툴과 다른 툴이 불릴 수 있다 (F-EP-02)
     let forwardBody: string | undefined;
@@ -227,7 +248,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
         : { status: 202, headers: {}, body: null };
     }
     if (plan.toolCalls.size > 0) touch();
-    const tap = createResponseTap(plan, endpoint.allowedTools, onToolCall);
+    const tap = createResponseTap(plan, endpoint.allowedTools, onToolCall, onToolsList);
 
     let response: Response;
     try {

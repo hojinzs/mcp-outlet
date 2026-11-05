@@ -306,6 +306,52 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     expect(transport.sessionId).toBeTruthy();
   });
 
+  it('지나가는 tools/list로 툴 캐시를 갱신해 새 툴로 보이고, 같으면 다시 쓰지 않는다', async () => {
+    const { url, token, endpoint, user } = await newEndpoint();
+    // 엔드포인트를 만든 뒤 업스트림에 툴 두 개가 생긴 상황
+    const stale = new Date('2026-01-01T00:00:00Z');
+    await db
+      .update(connectors)
+      .set({ toolsCache: [{ name: 'read_item' }], toolsCachedAt: stale })
+      .where(eq(connectors.id, endpoint.connector.id));
+    await db
+      .update(endpoints)
+      .set({ knownTools: ['read_item'] })
+      .where(eq(endpoints.id, endpoint.id));
+    const cachedAt = async () => {
+      const [row] = await db
+        .select({ at: connectors.toolsCachedAt })
+        .from(connectors)
+        .where(eq(connectors.id, endpoint.connector.id));
+      return row?.at;
+    };
+
+    const listOnce = async () => {
+      const { client } = await connect(url, token);
+      try {
+        await client.listTools();
+      } finally {
+        await client.close();
+      }
+    };
+
+    await listOnce();
+    await vi.waitFor(async () => expect(await cachedAt()).not.toEqual(stale));
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/endpoints/${endpoint.id}`,
+      cookies: user.cookies,
+    });
+    expect(detail.json().toolCounts).toEqual({ allowed: 2, total: 3, new: 2 });
+    expect(detail.json().allowedTools).toEqual(['read_item', 'slow_count']);
+
+    // 같은 목록이면(jsonb가 키 순서를 바꿔도) 다시 쓰지 않는다
+    const refreshedAt = await cachedAt();
+    await listOnce();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await cachedAt()).toEqual(refreshedAt);
+  });
+
   it('JSON 응답 모드 업스트림도 tools/list를 거른다', async () => {
     const { url, token } = await newEndpoint({ upstream: jsonUpstream, token: false });
     const { client } = await connect(url, token);

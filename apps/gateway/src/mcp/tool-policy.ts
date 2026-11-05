@@ -43,6 +43,8 @@ export type InboundPlan =
       kind: 'forward';
       // tools/call 요청 id → 툴 이름
       toolCalls: Map<string, string>;
+      // 커서 없이 보낸(첫 페이지부터의) tools/list 요청 id. 툴 캐시 갱신에 쓴다
+      toolLists: Set<string>;
     };
 
 function toolNameOf(message: Record<string, unknown>): string {
@@ -123,10 +125,14 @@ export function planInbound(body: unknown, allowedTools: readonly string[]): Inb
   }
 
   const toolCalls = new Map<string, string>();
+  const toolLists = new Set<string>();
   for (const message of messages.filter(isRequest)) {
     if (message.method === 'tools/call') toolCalls.set(idKey(message.id), toolNameOf(message));
+    if (message.method === 'tools/list' && message.params?.cursor === undefined) {
+      toolLists.add(idKey(message.id));
+    }
   }
-  return { kind: 'forward', toolCalls };
+  return { kind: 'forward', toolCalls, toolLists };
 }
 
 function filterToolsList(result: unknown, allowed: ReadonlySet<string>): unknown {
@@ -155,16 +161,18 @@ function isBlockedNotification(message: unknown): boolean {
   return typeof method === 'string' && BLOCKED_NOTIFICATION.test(method);
 }
 
-// 업스트림 응답 메시지를 고쳐 쓰고 tools/call 결과를 알린다. 클라이언트에 보내지 않을 메시지는
+// 업스트림 응답 메시지를 고쳐 쓰고 tools/call 결과와 거르기 전 tools/list 결과를 알린다. 클라이언트에 보내지 않을 메시지는
 // undefined로 돌려준다(배치면 빼고, 남는 것이 없으면 undefined).
 // 응답이 오기 전에 스트림이 끝나면 settle()이 남은 호출을 오류로 알린다
 export function createResponseTap(
   plan: Extract<InboundPlan, { kind: 'forward' }>,
   allowedTools: readonly string[],
   onToolCall: (toolName: string, outcome: ToolCallOutcome) => void,
+  onToolsList: (result: unknown) => void = () => {},
 ) {
   const allowed = new Set(allowedTools);
   const pending = new Map(plan.toolCalls);
+  const pendingLists = new Set(plan.toolLists);
 
   function rewriteOne(message: unknown): unknown {
     if (isBlockedNotification(message)) return undefined;
@@ -178,6 +186,9 @@ export function createResponseTap(
       onToolCall(toolName, isError ? 'error' : 'ok');
     }
     if (message.result === undefined) return message;
+    // 커서 없이 요청한 이 요청의 tools/list 응답만 알린다. 커서로 받은 마지막 페이지는 nextCursor가
+    // 없어도 목록 일부이고, 재개 스트림으로 온 응답은 어떤 요청의 응답인지 알 수 없다
+    if (pendingLists.delete(key)) onToolsList(message.result);
     return { ...message, result: stripCapabilities(filterToolsList(message.result, allowed)) };
   }
 

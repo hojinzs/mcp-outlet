@@ -7,6 +7,7 @@ import type { ConnectorRow } from '../db/queries/connectors.ts';
 import { auditLogs, connectors, endpoints, users } from '../db/schema.ts';
 import { MAX_TOOL_NAME_LENGTH } from '../mcp/limits.ts';
 import { MAX_DENIED_AUDIT_ROWS } from '../mcp/tool-policy.ts';
+import type { Runtimes } from '../runtimes/index.ts';
 import type { ConnectorRuntime } from '../runtimes/types.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
 import { UpstreamError } from '../upstream/safe-fetch.ts';
@@ -72,6 +73,7 @@ describe.skipIf(!testDatabaseUrl)('MCP 중계의 커넥터 상태 (DB)', () => {
       runtimes: { builtin: runtime },
       publicBaseUrl: 'https://outlet.test',
       upstreamTimeoutMs,
+      now: () => new Date(),
       log: { warn: () => {} },
     });
     const request: McpHttpRequest = {
@@ -249,6 +251,7 @@ describe.skipIf(!testDatabaseUrl)('MCP 중계의 커넥터 상태 (DB)', () => {
       runtimes: {},
       publicBaseUrl: 'https://outlet.test',
       upstreamTimeoutMs: 3000,
+      now: () => new Date(),
       log: { warn: () => {} },
     });
     const batch = Array.from({ length: MAX_DENIED_AUDIT_ROWS + 5 }, (_, i) => ({
@@ -267,5 +270,132 @@ describe.skipIf(!testDatabaseUrl)('MCP 중계의 커넥터 상태 (DB)', () => {
     expect(new Set(rows.map((row) => row.toolName))).toEqual(
       new Set(['y'.repeat(MAX_TOOL_NAME_LENGTH)]),
     );
+  });
+
+  describe('원격 커넥터 툴 캐시 갱신', () => {
+    const remoteManifest: ConnectorManifest = {
+      manifestVersion: 1,
+      name: 'Remote',
+      runtime: 'remote',
+      url: 'https://upstream.test/mcp',
+      visibleGroups: [],
+      credentials: [],
+      auth: { type: 'none' },
+    };
+    const cached = [{ name: 'read_item', description: '읽는다' }];
+
+    async function newRemoteEndpoint() {
+      const [user] = await db
+        .insert(users)
+        .values({ sub: `sub-${randomUUID()}` })
+        .returning({ id: users.id });
+      if (!user) throw new Error('no user');
+      const [connector] = await db
+        .insert(connectors)
+        .values({
+          ownerId: user.id,
+          runtime: 'remote',
+          manifest: remoteManifest,
+          status: 'ok',
+          toolsCache: cached,
+          toolsCachedAt: new Date('2026-01-01T00:00:00Z'),
+        })
+        .returning();
+      if (!connector) throw new Error('no connector');
+      const [endpoint] = await db
+        .insert(endpoints)
+        .values({
+          ownerId: user.id,
+          connectorId: connector.id,
+          name: 'R',
+          allowedTools: ['read_item'],
+        })
+        .returning();
+      if (!endpoint) throw new Error('no endpoint');
+      return { endpoint, connector };
+    }
+
+    function listing(result: Record<string, unknown>): Runtimes {
+      return {
+        remote: {
+          testConnection: async () => ({ result: 'ok', tools: [] }),
+          forward: async () => Response.json({ jsonrpc: '2.0', id: 1, result }),
+        },
+      };
+    }
+
+    async function list(access: Awaited<ReturnType<typeof newRemoteEndpoint>>, runtimes: Runtimes) {
+      const proxy = createMcpProxy({
+        db,
+        secrets: createSecretBox({ current: KEY }),
+        runtimes,
+        publicBaseUrl: 'https://outlet.test',
+        upstreamTimeoutMs: 3000,
+        now: () => new Date('2026-11-06T00:00:00Z'),
+        log: { warn: () => {} },
+      });
+      return proxy.proxy(access, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: { json: { jsonrpc: '2.0', id: 1, method: 'tools/list' } },
+        signal: new AbortController().signal,
+      });
+    }
+
+    async function cacheOf(connector: ConnectorRow) {
+      const [row] = await db.select().from(connectors).where(eq(connectors.id, connector.id));
+      return { tools: row?.toolsCache, cachedAt: row?.toolsCachedAt };
+    }
+
+    const schema = { type: 'object' };
+
+    it('tools/list 응답이 캐시와 다르면 거르기 전 원본으로 캐시를 갱신한다', async () => {
+      const access = await newRemoteEndpoint();
+      const res = await list(
+        access,
+        listing({
+          tools: [
+            { name: 'read_item', description: '읽는다', inputSchema: schema },
+            { name: 'delete_item', inputSchema: schema },
+          ],
+        }),
+      );
+      // 클라이언트에는 허용목록으로 거른 목록만 간다
+      expect(
+        JSON.parse(res.body as string).result.tools.map((t: { name: string }) => t.name),
+      ).toEqual(['read_item']);
+      await vi.waitFor(async () =>
+        expect(await cacheOf(access.connector)).toEqual({
+          tools: [{ name: 'read_item', description: '읽는다' }, { name: 'delete_item' }],
+          cachedAt: new Date('2026-11-06T00:00:00Z'),
+        }),
+      );
+      // 허용목록은 바꾸지 않는다
+      const [endpoint] = await db
+        .select()
+        .from(endpoints)
+        .where(eq(endpoints.id, access.endpoint.id));
+      expect(endpoint?.allowedTools).toEqual(['read_item']);
+    });
+
+    it('nextCursor가 있으면 갱신하지 않는다', async () => {
+      const access = await newRemoteEndpoint();
+      await list(
+        access,
+        listing({ tools: [{ name: 'delete_item', inputSchema: schema }], nextCursor: 'page2' }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect((await cacheOf(access.connector)).cachedAt).toEqual(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    it('같으면 쓰지 않는다', async () => {
+      const access = await newRemoteEndpoint();
+      await list(
+        access,
+        listing({ tools: [{ name: 'read_item', description: '읽는다', inputSchema: schema }] }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect((await cacheOf(access.connector)).cachedAt).toEqual(new Date('2026-01-01T00:00:00Z'));
+    });
   });
 });

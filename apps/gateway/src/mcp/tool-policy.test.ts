@@ -115,7 +115,12 @@ describe('리소스·프롬프트 차단', () => {
     expect(planInbound(request(1, 'resourcesX/list'), allowed).kind).toBe('forward');
   });
 
-  const tap = () => createResponseTap({ kind: 'forward', toolCalls: new Map() }, allowed, () => {});
+  const tap = () =>
+    createResponseTap(
+      { kind: 'forward', toolCalls: new Map(), toolLists: new Set() },
+      allowed,
+      () => {},
+    );
 
   it('initialize capabilities에서 resources·prompts를 뺀다', () => {
     const result = {
@@ -184,7 +189,7 @@ describe('createResponseTap', () => {
 
   it('이 요청에서 보내지 않은 tools/list 응답(GET 스트림 재개)도 허용목록으로 거른다', () => {
     const tap = createResponseTap(
-      { kind: 'forward', toolCalls: new Map() },
+      { kind: 'forward', toolCalls: new Map(), toolLists: new Set() },
       ['read_item'],
       () => {},
     );
@@ -196,6 +201,35 @@ describe('createResponseTap', () => {
       { jsonrpc: '2.0', id: 'earlier', result: { tools: [] } },
       { jsonrpc: '2.0', id: 'other', result: { content: [] } },
     ]);
+  });
+
+  it('커서 없이 보낸 이 요청의 tools/list 응답만 툴 캐시용으로 알린다', () => {
+    const plan = planInbound(
+      [
+        { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+        { jsonrpc: '2.0', id: 2, method: 'tools/list', params: { cursor: 'p2' } },
+      ],
+      ['read_item'],
+    );
+    if (plan.kind !== 'forward') throw new Error('expected forward');
+    const lists: unknown[] = [];
+    const tap = createResponseTap(
+      plan,
+      ['read_item'],
+      () => {},
+      (result) => lists.push(result),
+    );
+    const full = { tools: [{ name: 'read_item' }, { name: 'delete_item' }] };
+    tap.rewrite([
+      { jsonrpc: '2.0', id: 1, result: full },
+      // 커서로 받은 마지막 페이지는 nextCursor가 없어도 목록 일부다
+      { jsonrpc: '2.0', id: 2, result: { tools: [{ name: 'x' }] } },
+      // 재개 스트림으로 온 응답은 어떤 요청의 것인지 모른다
+      { jsonrpc: '2.0', id: 'earlier', result: { tools: [] } },
+    ]);
+    // 같은 id가 다시 와도 한 번만
+    tap.rewrite({ jsonrpc: '2.0', id: 1, result: full });
+    expect(lists).toEqual([full]);
   });
 
   it('성공 응답은 ok, 같은 호출을 두 번 알리지 않는다', () => {

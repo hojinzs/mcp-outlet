@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { toCachedTool } from '../mcp/tool-cache.ts';
 import {
   UpstreamError,
   type UpstreamErrorKind,
@@ -46,15 +47,6 @@ export function upstreamAuthHeaders(connector: RuntimeConnector): Record<string,
   const token = connector.credentials[auth.credential];
   if (!token) return {};
   return { [auth.header]: `${auth.prefix}${token}` };
-}
-
-function toCachedTool(tool: CachedTool): CachedTool {
-  return {
-    name: tool.name,
-    title: tool.title,
-    description: tool.description,
-    annotations: tool.annotations,
-  };
 }
 
 async function listAllTools(client: Client, timeout: number): Promise<CachedTool[]> {
