@@ -159,13 +159,16 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     expect((await post(`${base}/c/abc/mcp`, other.token, initialize)).status).toBe(404);
   });
 
-  it('로그인 허용 그룹에서 빠지면 403이고 사용자 groups·email을 갱신한다', async () => {
+  it('로그인 허용 그룹에서 빠지면 403이고 groups를 갱신하며 관리자 role과 관리 UI 세션을 거둔다', async () => {
     const { url, user } = await newEndpoint();
+    await db.update(users).set({ role: 'admin' }).where(eq(users.sub, user.sub));
     const token = await idp.signIdToken({ sub: user.sub, email: 'new@test', groups: ['Other'] });
     const res = await post(url, token, initialize);
     expect(res.status).toBe(403);
     const [row] = await db.select().from(users).where(eq(users.sub, user.sub));
-    expect(row).toMatchObject({ groups: ['Other'], email: 'new@test' });
+    expect(row).toMatchObject({ groups: ['Other'], role: 'user' });
+    const me = await app.inject({ url: '/api/admin/users', cookies: user.cookies });
+    expect(me.statusCode).toBe(401);
   });
 
   it('엔드포인트 비활성·커넥터 사용 중지는 다음 요청부터 거부한다', async () => {

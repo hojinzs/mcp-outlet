@@ -44,15 +44,17 @@ describe.skipIf(!testDatabaseUrl)('completeLogin (DB)', () => {
     expect(await userBySub(sub)).toBeUndefined();
   });
 
-  it('그룹에서 빠진 기존 사용자에게 새 세션을 만들지 않는다', async () => {
+  it('그룹에서 빠진 기존 사용자는 새 세션 없이 기존 세션과 관리자 role도 잃는다', async () => {
     const sub = `sub-${randomUUID()}`;
-    await completeLogin(db, { sub, groups: ['Users'] }, options);
+    await completeLogin(db, { sub, groups: ['Users', 'Admins'] }, options);
     const user = await userBySub(sub);
+    expect(user?.role).toBe('admin');
     expect(await completeLogin(db, { sub, groups: [] }, options)).toMatchObject({ kind: 'denied' });
     const rows = await db
       .select()
       .from(sessions)
       .where(eq(sessions.userId, user?.id ?? ''));
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(0);
+    expect(await userBySub(sub)).toMatchObject({ role: 'user', groups: [] });
   });
 });

@@ -1,7 +1,8 @@
 import type { JWTPayload } from 'jose';
 import { type AccessPolicy, decideAccess, extractGroups } from '../auth/access.ts';
 import type { Db } from '../db/client.ts';
-import { upsertUserOnLogin } from '../db/queries/users.ts';
+import { findUserBySub, upsertUserOnLogin } from '../db/queries/users.ts';
+import { revokeMembership } from './membership.ts';
 import { createSession } from './sessions.ts';
 
 export type LoginResult =
@@ -9,7 +10,7 @@ export type LoginResult =
   | { kind: 'ok'; token: string; expiresAt: Date };
 
 // 검증을 마친 id_token 클레임으로 로그인을 끝낸다.
-// 허용 그룹 밖이면 사용자 행도 세션도 만들지 않는다 (SCR-COM-03 not_member)
+// 허용 그룹 밖이면 사용자 행도 세션도 만들지 않고, 이미 있는 사용자면 role과 세션을 거둔다 (SCR-COM-03 not_member)
 export async function completeLogin(
   db: Db,
   claims: JWTPayload & { sub: string },
@@ -19,7 +20,11 @@ export async function completeLogin(
   const email = typeof claims.email === 'string' && claims.email !== '' ? claims.email : null;
   const groups = extractGroups(claims, options.policy.groupsClaim);
   const decision = decideAccess(groups, options.policy);
-  if (!decision.allowed) return { kind: 'denied', email };
+  if (!decision.allowed) {
+    const existing = await findUserBySub(db, claims.sub);
+    if (existing) await revokeMembership(db, existing.id, groups);
+    return { kind: 'denied', email };
+  }
 
   const user = await upsertUserOnLogin(
     db,

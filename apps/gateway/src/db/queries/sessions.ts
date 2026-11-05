@@ -44,3 +44,8 @@ export async function deleteExpiredSessions(db: Db, now: Date): Promise<number> 
     .returning({ tokenHash: sessions.tokenHash });
   return deleted.length;
 }
+
+// 로그인 허용 그룹에서 빠진 사용자의 관리 UI 세션을 모두 끝낸다 (F-AUTH-06)
+export async function deleteUserSessions(db: Db, userId: string): Promise<void> {
+  await db.delete(sessions).where(eq(sessions.userId, userId));
+}
