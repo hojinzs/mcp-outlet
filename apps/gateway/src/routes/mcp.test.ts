@@ -184,6 +184,13 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     expect((await post(url, token, initialize)).status).toBe(403);
   });
 
+  it('엔드포인트를 지우면 다음 요청부터 404', async () => {
+    const { url, token, endpoint } = await newEndpoint();
+    expect((await post(url, token, initialize)).status).toBe(200);
+    await db.delete(endpoints).where(eq(endpoints.id, endpoint.id));
+    expect((await post(url, token, initialize)).status).toBe(404);
+  });
+
   it('사용 중지된 커넥터로 온 툴 호출은 403으로 막고 감사 로그에 거부로 남긴다', async () => {
     const { url, token, endpoint } = await newEndpoint();
     await db

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSecretBox } from '../crypto/secrets.ts';
-import { connectors, credentials, endpoints, users } from '../db/schema.ts';
+import { auditLogs, connectors, credentials, endpoints, users } from '../db/schema.ts';
 import { createRuntimes } from '../runtimes/index.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
 import {
@@ -181,6 +181,29 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
       }),
       'limit_exceeded',
     );
+  });
+
+  it('최근 호출은 최신순 20건만 준다 (F-UI-01)', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'calls',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    const base = Date.parse('2026-11-05T00:00:00Z');
+    await db.insert(auditLogs).values(
+      Array.from({ length: 25 }, (_, i) => ({
+        at: new Date(base + i * 1000),
+        endpointId: created.id,
+        toolName: `tool_${i}`,
+        result: 'ok' as const,
+        durationMs: 1,
+      })),
+    );
+    const calls = await listEndpointCalls(deps(), owner, created.id);
+    expect(calls).toHaveLength(20);
+    expect(calls[0]?.toolName).toBe('tool_24');
+    expect(calls[19]?.toolName).toBe('tool_5');
   });
 
   it('다른 사용자의 엔드포인트·커넥터는 없는 것으로 다룬다', async () => {
