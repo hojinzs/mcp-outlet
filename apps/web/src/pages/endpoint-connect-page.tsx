@@ -157,9 +157,9 @@ export function EndpointConnectPage() {
           <TabsContent value="claude" className="flex flex-col gap-3">
             <Steps
               items={[
-                '설정 → 커넥터 → 커스텀 커넥터 추가를 엽니다.',
-                '이름을 정하고 원격 MCP 서버 URL에 엔드포인트 URL을 넣습니다.',
-                `고급 설정에 ${secretStep}를 넣고 추가를 누릅니다.`,
+                '사용자 지정 → 커넥터에서 커넥터 추가 → 커스텀 커넥터 추가를 엽니다.',
+                '이름을 정하고 MCP 서버 URL에 엔드포인트 URL을 넣은 뒤 계속을 누릅니다.',
+                `인증은 지금 로그인, OAuth 클라이언트는 자체 OAuth 클라이언트 사용을 고르고 ${secretStep}를 넣은 뒤 추가를 누릅니다.`,
                 '연결을 누르고 로그인 화면에서 회사 계정으로 로그인합니다.',
               ]}
             />
@@ -195,8 +195,7 @@ export function EndpointConnectPage() {
           </TabsContent>
         </Tabs>
         <p className="text-xs text-muted-foreground">
-          Claude Code 명령은 2026-11-05에 확인했습니다. Claude·ChatGPT의 메뉴 이름은 바뀔 수
-          있습니다.
+          Claude 화면과 Claude Code 명령은 2026-11-05에 확인했습니다. 메뉴 이름은 바뀔 수 있습니다.
         </p>
       </Card>
 
