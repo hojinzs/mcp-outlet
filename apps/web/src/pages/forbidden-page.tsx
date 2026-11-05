@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { authOptionsQuery } from '../api/queries.ts';
+import { authOptionsQuery, deniedAccountQuery } from '../api/queries.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
+import { notMemberMessage } from '../features/auth/denied.ts';
 import { AppLayout } from '../layouts/app-layout.tsx';
 import { accountSwitchMode, logout } from '../lib/session.ts';
 
@@ -28,10 +29,7 @@ function NotMember({ email }: { email: string | null }) {
     <main className="flex min-h-dvh items-center justify-center p-4">
       <Card className="w-full max-w-md gap-4 p-8 text-center">
         <h1 className="text-xl font-semibold">사용 권한이 없습니다</h1>
-        <p className="text-sm text-muted-foreground">
-          {email ? `${email} 계정은 ` : '이 계정은 '}
-          MCP Outlet 사용 그룹에 속해 있지 않습니다. 관리자에게 그룹 추가를 요청하세요.
-        </p>
+        <p className="text-sm text-muted-foreground">{notMemberMessage(email)}</p>
         {failed && (
           <p role="alert" className="text-sm text-destructive">
             로그아웃하지 못했습니다. 다시 시도하세요.
@@ -77,5 +75,15 @@ export function ForbiddenPage() {
       </AppLayout>
     );
   }
-  return <NotMember email={params.get('email')} />;
+  return <NotMemberPage />;
+}
+
+// 이메일은 주소 대신 gateway의 서명 쿠키로 받는다. "이 계정은"이 이메일로 바뀌며 깜빡이지 않게
+// 응답(실패 포함)을 받은 뒤에 그린다
+function NotMemberPage() {
+  const denied = useQuery(deniedAccountQuery);
+  // 계정 전환 방식(NotMember)도 함께 받기 시작해 차례로 기다리지 않게 한다
+  useQuery(authOptionsQuery);
+  if (denied.isPending) return null;
+  return <NotMember email={denied.data?.email ?? null} />;
 }

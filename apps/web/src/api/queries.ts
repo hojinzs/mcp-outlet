@@ -14,6 +14,7 @@ import type {
   Connector,
   ConnectorDisableInput,
   CreateEndpointInput,
+  DeniedAccount,
   EndpointDetail,
   EndpointPatch,
   EndpointSummary,
@@ -31,6 +32,7 @@ import type {
 export const queryKeys = {
   me: ['me'] as const,
   authOptions: ['auth-options'] as const,
+  deniedAccount: ['auth-denied'] as const,
   endpoints: ['endpoints'] as const,
   endpoint: (id: string) => ['endpoints', id] as const,
   calls: (id: string) => ['endpoints', id, 'calls'] as const,
@@ -58,6 +60,14 @@ export const authOptionsQuery = queryOptions({
   queryKey: queryKeys.authOptions,
   queryFn: () => api<AuthOptions>('/auth/options'),
   staleTime: Infinity,
+});
+
+// 접근 거부 화면(SCR-COM-03 not_member)이 세션 없이 받는다. 실패하면 이메일 없이 보여주므로 다시 시도하지 않는다
+export const deniedAccountQuery = queryOptions({
+  queryKey: queryKeys.deniedAccount,
+  queryFn: () => api<DeniedAccount>('/auth/denied'),
+  staleTime: Infinity,
+  retry: false,
 });
 
 export const endpointsQuery = queryOptions({
