@@ -73,22 +73,25 @@ export async function deleteConnector(db: DbOrTx, ownerId: string, id: string): 
   return deleted.length > 0;
 }
 
-// 업스트림 OAuth 동의 전에 저장했다가 엔드포인트를 만들지 않고 남은 커넥터 (SCR-EP-02)
+// 업스트림 OAuth 동의 전에 저장했다가 엔드포인트를 만들지 않고 남은 커넥터 (SCR-EP-02).
+// ownerId를 빼면 모든 사용자 것을 지운다(보관 주기 작업). 지운 행 수를 돌려준다
 export async function deleteStalePendingConnectors(
   db: DbOrTx,
-  ownerId: string,
   createdBefore: Date,
-): Promise<void> {
-  await db
+  ownerId?: string,
+): Promise<number> {
+  const deleted = await db
     .delete(connectors)
     .where(
       and(
-        eq(connectors.ownerId, ownerId),
+        ownerId ? eq(connectors.ownerId, ownerId) : undefined,
         eq(connectors.status, 'pending'),
         lt(connectors.createdAt, createdBefore),
         notExists(db.select().from(endpoints).where(eq(endpoints.connectorId, connectors.id))),
       ),
-    );
+    )
+    .returning({ id: connectors.id });
+  return deleted.length;
 }
 
 // 업스트림 토큰 갱신이 거부되면 사용자가 다시 연결할 때까지 재연결 필요로 둔다 (F-RUN-03)

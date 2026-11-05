@@ -41,8 +41,9 @@ export type OAuthConnectorInput = {
   auth: { type: 'oauth2' } & OAuthClientCredentials;
 };
 
-// 24시간 안에 엔드포인트를 만들지 않은 "연결 중" 커넥터는 지운다 (SCR-EP-02)
-const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+// 24시간 안에 엔드포인트를 만들지 않은 "연결 중" 커넥터는 지운다 (SCR-EP-02).
+// 다음 생성 때와 보관 주기 작업(services/retention.ts)에서 지운다
+export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type UpstreamOAuthResult = 'connected' | 'state_mismatch' | 'failed';
 
@@ -61,8 +62,8 @@ export async function createOAuthConnector(
   const { builtin, method } = oauthBuiltin(deps, input.builtin);
   await deleteStalePendingConnectors(
     deps.db,
-    ownerId,
     new Date(deps.now().getTime() - PENDING_TTL_MS),
+    ownerId,
   );
   await assertConnectorQuota(deps, ownerId);
   const connector = await deps.db.transaction(async (tx) => {
