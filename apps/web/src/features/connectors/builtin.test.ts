@@ -204,4 +204,12 @@ describe('저장·계정 연결 실패 문구', () => {
       ),
     ).toBe('Client ID와 Client Secret을 넣으세요');
   });
+
+  it('계정 연결 시작이 커넥터 상한에 걸리면 커넥터 상한 문구', () => {
+    const limited = new ApiError(409, {
+      code: 'limit_exceeded',
+      details: { resource: 'connector', limit: 20 },
+    });
+    expect(builtinErrorText(limited)).toContain('커넥터는 최대 20개까지');
+  });
 });

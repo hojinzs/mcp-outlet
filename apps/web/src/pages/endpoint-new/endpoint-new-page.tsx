@@ -52,6 +52,7 @@ import {
   toRemoteInput,
 } from '../../features/connectors/remote-form.ts';
 import { serviceNamesByConnector } from '../../features/endpoints/connector-kind.ts';
+import { limitExceededText } from '../../features/endpoints/limit.ts';
 import { suggestEndpointName } from '../../features/endpoints/naming.ts';
 import { keepAvailable } from '../../features/tools/selection.ts';
 import { cn } from '../../lib/utils.ts';
@@ -407,7 +408,7 @@ export function EndpointNewPage() {
         setStep(1);
         return;
       }
-      setCreateError(error.message);
+      setCreateError(limitExceededText(error) ?? error.message);
     },
   });
 

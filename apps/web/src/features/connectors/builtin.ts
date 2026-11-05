@@ -7,6 +7,7 @@ import type {
   Connector,
   ConnectorRuntime,
 } from '../../api/types.ts';
+import { limitExceededText } from '../endpoints/limit.ts';
 import { connectionTestMessage } from './remote-form.ts';
 
 // 내장 서비스 커넥터 공통 규칙 (SCR-EP-02 내장 서비스, SCR-EP-03 커넥터 설정)
@@ -198,6 +199,9 @@ export function builtinGuide(key: string | null): BuiltinGuide {
 // 계정 연결 시작·서비스 계정 키 저장 실패 문구. 서버 원문 예외는 보여주지 않는다
 export function builtinErrorText(error: Error): string {
   if (!(error instanceof ApiError)) return error.message;
+  // 계정 연결 시작(POST /api/connectors)은 커넥터를 먼저 만들어 커넥터 상한에 걸릴 수 있다
+  const limit = limitExceededText(error);
+  if (limit) return limit;
   if (error.code === 'connection_test_failed') {
     return connectorTestMessage('builtin', String(error.details?.result ?? ''));
   }
