@@ -13,6 +13,7 @@ import {
   newEndpointReturnTo,
   oauthMethodOf,
   resumeReason,
+  serviceAccountKeyRejected,
   unpickableGuide,
   unpickableReason,
   withoutConnectOutcome,
@@ -125,7 +126,7 @@ describe('내장 서비스 목록', () => {
   });
 
   it('정상 커넥터만 고를 수 있다', () => {
-    const connector = { disabledAt: null, status: 'ok' } as Connector;
+    const connector = { auth: { type: 'oauth2' }, disabledAt: null, status: 'ok' } as Connector;
     expect(isPickable(connector)).toBe(true);
     expect(isPickable({ ...connector, status: 'pending' })).toBe(false);
     expect(isPickable({ ...connector, status: 'error' })).toBe(false);
@@ -136,7 +137,13 @@ describe('내장 서비스 목록', () => {
   });
 
   it('고를 수 없는 커넥터는 사유와 고칠 곳을 준다', () => {
-    const connector = { id: 'c1', disabledAt: null, status: 'ok', endpointCount: 1 } as Connector;
+    const connector = {
+      id: 'c1',
+      auth: { type: 'oauth2' },
+      disabledAt: null,
+      status: 'ok',
+      endpointCount: 1,
+    } as Connector;
     const endpointIds = new Map([['c1', 'e1']]);
     expect(unpickableGuide(connector, endpointIds)).toBeNull();
     expect(unpickableGuide({ ...connector, status: 'error' }, endpointIds)?.link).toEqual({
@@ -170,6 +177,7 @@ describe('내장 서비스 목록', () => {
   it('이어하기 화면은 연결 테스트에 성공하면 테스트 전 사유를 지운다', () => {
     const connector = {
       id: 'c1',
+      auth: { type: 'oauth2' },
       disabledAt: null,
       status: 'error',
       endpointCount: 0,
@@ -185,6 +193,51 @@ describe('내장 서비스 목록', () => {
     expect(resumeReason({ ...connector, disabledAt: '2026-11-01T00:00:00Z' }, 'ok')).toContain(
       '사용 중지',
     );
+  });
+
+  describe('서비스 계정 키 거부', () => {
+    const serviceAccount = {
+      id: 'c1',
+      auth: { type: 'service_account' },
+      disabledAt: null,
+      status: 'error',
+      lastTestResult: 'auth_failed',
+      endpointCount: 1,
+    } as Connector;
+    const endpointIds = new Map([['c1', 'e1']]);
+
+    it('error와 auth_failed, 옛 reauth_required를 키 거부로 본다', () => {
+      expect(serviceAccountKeyRejected(serviceAccount)).toBe(true);
+      expect(
+        serviceAccountKeyRejected({
+          ...serviceAccount,
+          status: 'reauth_required',
+          lastTestResult: 'ok',
+        }),
+      ).toBe(true);
+      // MCP 호출 중 거부는 연결 테스트 결과를 바꾸지 않는다. 다시 테스트해야 알 수 있다
+      expect(serviceAccountKeyRejected({ ...serviceAccount, lastTestResult: 'ok' })).toBe(false);
+      expect(serviceAccountKeyRejected({ ...serviceAccount, status: 'ok' })).toBe(false);
+      expect(serviceAccountKeyRejected({ ...serviceAccount, auth: { type: 'oauth2' } })).toBe(
+        false,
+      );
+    });
+
+    it('사유와 링크는 키 교체로 안내한다', () => {
+      expect(unpickableGuide(serviceAccount, endpointIds)).toEqual({
+        reason: '서비스 계정 키가 거부되었습니다',
+        link: { to: '/endpoints/e1', label: '상세에서 키 교체' },
+      });
+      expect(
+        unpickableGuide({ ...serviceAccount, status: 'reauth_required' }, endpointIds)?.link?.label,
+      ).toBe('상세에서 키 교체');
+      expect(
+        unpickableGuide({ ...serviceAccount, lastTestResult: 'ok' }, endpointIds)?.link?.label,
+      ).toBe('상세에서 다시 테스트');
+      expect(unpickableGuide({ ...serviceAccount, endpointCount: 0 }, undefined)?.link?.label).toBe(
+        '키 교체·연결 테스트',
+      );
+    });
   });
 });
 

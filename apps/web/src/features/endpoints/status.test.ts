@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EndpointStatus, EndpointSummary } from '../../api/types.ts';
-import { reauthBanners, reauthRequiredCount } from './status.ts';
+import { endpointStatusHint, reauthBanners, reauthRequiredCount } from './status.ts';
 
 function endpoint(id: string, connectorId: string, status: EndpointStatus): EndpointSummary {
   return {
@@ -35,7 +35,24 @@ describe('재연결 배너', () => {
       endpoint('e4', 'cms', 'connector_error'),
     ]);
     expect(banners).toEqual([
-      { connectorId: 'ga', connectorName: '커넥터 ga', endpointCount: 2, firstEndpointId: 'e2' },
+      {
+        connectorId: 'ga',
+        connectorName: '커넥터 ga',
+        endpointCount: 2,
+        firstEndpointId: 'e2',
+        fix: 'reconnect',
+      },
+    ]);
+  });
+
+  it('서비스 계정 커넥터의 옛 재연결 필요는 키 교체로 안내한다', () => {
+    const banners = reauthBanners(
+      [endpoint('e1', 'sa', 'reauth_required'), endpoint('e2', 'ga', 'reauth_required')],
+      new Set(['sa']),
+    );
+    expect(banners.map((banner) => [banner.connectorId, banner.fix])).toEqual([
+      ['sa', 'replace_key'],
+      ['ga', 'reconnect'],
     ]);
   });
 
@@ -55,5 +72,16 @@ describe('재연결 메뉴 배지', () => {
       ]),
     ).toBe(2);
     expect(reauthRequiredCount([])).toBe(0);
+  });
+});
+
+describe('상태 안내', () => {
+  it('서비스 계정이면 다시 연결 대신 키 교체로 안내한다', () => {
+    expect(endpointStatusHint('reauth_required')).toContain('다시 연결');
+    expect(endpointStatusHint('reauth_required', 'oauth2')).toContain('다시 연결');
+    expect(endpointStatusHint('reauth_required', 'service_account')).toContain('키 파일을 교체');
+    expect(endpointStatusHint('connector_error', 'service_account')).toContain('키 파일을 교체');
+    expect(endpointStatusHint('connector_error', 'static_token')).toContain('토큰이나 주소');
+    expect(endpointStatusHint('active', 'service_account')).toBeUndefined();
   });
 });

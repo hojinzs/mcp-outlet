@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { builtinsQuery, endpointQuery } from '../../api/queries.ts';
+import { builtinsQuery, connectorQuery, endpointQuery } from '../../api/queries.ts';
 import type { EndpointDetail } from '../../api/types.ts';
 import { CopyButton } from '../../components/copy-button.tsx';
 import { LeaveGuard } from '../../components/leave-guard.tsx';
@@ -17,7 +17,7 @@ import { Switch } from '../../components/ui/switch.tsx';
 import { builtinNameOf } from '../../features/connectors/builtin.ts';
 import { connectorKindLabel } from '../../features/endpoints/connector-kind.ts';
 import { newToolNames, savedSelection } from '../../features/endpoints/detail.ts';
-import { endpointStatusView } from '../../features/endpoints/status.ts';
+import { endpointStatusHint } from '../../features/endpoints/status.ts';
 import { sameSelection, toggle } from '../../features/tools/selection.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { ConnectorSettings } from './connector-settings.tsx';
@@ -138,6 +138,11 @@ export function EndpointDetailPage() {
   const endpoint = useQuery(endpointQuery(id));
   // 내장 서비스면 종류 칸에 서비스 이름을 보여준다
   const builtins = useQuery({ ...builtinsQuery, enabled: !!endpoint.data?.connector.builtin });
+  // 상태 안내를 인증 방식에 맞추려고 받는다. 커넥터 설정(ConnectorSettings)과 같은 요청이다
+  const connector = useQuery({
+    ...connectorQuery(endpoint.data?.connector.id ?? ''),
+    enabled: endpoint.data !== undefined,
+  });
   const [draft, setDraft] = useState<Set<string> | null>(null);
   const [leaving, setLeaving] = useState(false);
 
@@ -156,7 +161,7 @@ export function EndpointDetailPage() {
   const saved = savedSelection(data);
   const selected = draft ?? saved;
   const dirty = draft !== null && !sameSelection(draft, saved);
-  const hint = endpointStatusView[data.status].hint;
+  const hint = endpointStatusHint(data.status, connector.data?.auth.type);
 
   return (
     <div className="flex flex-col gap-6">
@@ -167,7 +172,7 @@ export function EndpointDetailPage() {
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <EndpointName key={data.name} id={data.id} name={data.name} />
-          <StatusBadge status={data.status} />
+          <StatusBadge status={data.status} hint={hint} />
           <Button asChild className="ml-auto">
             <Link to={`/endpoints/${data.id}/connect`}>연결 안내</Link>
           </Button>

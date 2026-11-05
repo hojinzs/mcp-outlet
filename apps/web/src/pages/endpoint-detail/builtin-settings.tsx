@@ -14,6 +14,7 @@ import {
   checkServiceAccountKey,
   endpointReturnTo,
   oauthMethodOf,
+  serviceAccountKeyRejected,
   supportsServiceAccount,
 } from '../../features/connectors/builtin.ts';
 import { formatDateTime } from '../../lib/format.ts';
@@ -149,6 +150,7 @@ export function BuiltinSettings({
   const oauthMethod = oauthMethodOf(builtin);
   const provider = oauthMethod?.provider;
   const canUseServiceAccount = supportsServiceAccount(builtin);
+  const keyRejected = serviceAccountKeyRejected(connector);
 
   function startReconnect() {
     reconnect.start.mutate({
@@ -168,7 +170,21 @@ export function BuiltinSettings({
 
   return (
     <div className="flex flex-col gap-4">
-      {connector.status === 'reauth_required' && (
+      {keyRejected && panel !== 'service_account_key' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm"
+        >
+          <TriangleAlertIcon className="size-4 text-destructive" />
+          <p className="flex-1">
+            서비스 계정 키가 거부되었습니다. 키가 폐기되었거나 손상되었을 수 있습니다. 키 파일을
+            교체하세요.
+          </p>
+          <Button onClick={() => setPanel('service_account_key')}>키 파일 교체</Button>
+        </div>
+      )}
+      {/* 재연결(업스트림 동의)은 OAuth만 한다. 옛 서비스 계정 커넥터의 reauth_required는 위 키 거부로 보인다 */}
+      {connector.status === 'reauth_required' && !keyRejected && (
         <div
           role="alert"
           className="flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"
@@ -215,9 +231,12 @@ export function BuiltinSettings({
           )}
           {!isOAuth && (
             <>
-              <Button variant="outline" onClick={() => setPanel('service_account_key')}>
-                키 파일 교체
-              </Button>
+              {/* 키가 거부되었으면 위 안내의 버튼으로 교체한다 */}
+              {!keyRejected && (
+                <Button variant="outline" onClick={() => setPanel('service_account_key')}>
+                  키 파일 교체
+                </Button>
+              )}
               {oauthMethod && (
                 <Button variant="ghost" onClick={() => setPanel('oauth_client')}>
                   {oauthMethod.provider} 계정 연결로 바꾸기

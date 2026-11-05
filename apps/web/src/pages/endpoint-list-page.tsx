@@ -3,7 +3,7 @@ import { PlusIcon, TriangleAlertIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { builtinsQuery, connectorsQuery, endpointsQuery } from '../api/queries.ts';
-import type { Builtin, Connector, EndpointSummary } from '../api/types.ts';
+import type { Builtin, Connector, ConnectorAuthView, EndpointSummary } from '../api/types.ts';
 import { ConnectorStatusBadge } from '../components/connector-status-badge.tsx';
 import { CopyButton } from '../components/copy-button.tsx';
 import { DeleteConnectorDialog } from '../components/delete-connector-dialog.tsx';
@@ -16,7 +16,11 @@ import { Card } from '../components/ui/card.tsx';
 import { builtinNameOf, unpickableGuide } from '../features/connectors/builtin.ts';
 import { orphanConnectors } from '../features/connectors/deletion.ts';
 import { connectorKindLabel } from '../features/endpoints/connector-kind.ts';
-import { type ReauthBanner, reauthBanners } from '../features/endpoints/status.ts';
+import {
+  endpointStatusHint,
+  type ReauthBanner,
+  reauthBanners,
+} from '../features/endpoints/status.ts';
 
 // SCR-EP-01 엔드포인트 목록 (홈). 정렬은 gateway가 최근 수정순으로 준다.
 // 상태 토글과 삭제는 실수를 막기 위해 상세 화면에서만 한다
@@ -43,12 +47,21 @@ function Banner({ banner }: { banner: ReauthBanner }) {
       className="flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"
     >
       <TriangleAlertIcon className="size-4 text-warning" />
-      <p className="flex-1">
-        {banner.connectorName} 연결이 끊겨 엔드포인트 {banner.endpointCount}개가 동작하지 않습니다.
-        다시 연결하세요.
-      </p>
+      {banner.fix === 'replace_key' ? (
+        <p className="flex-1">
+          {banner.connectorName}의 서비스 계정 키가 거부되어 엔드포인트 {banner.endpointCount}개가
+          동작하지 않습니다. 키 파일을 교체하세요.
+        </p>
+      ) : (
+        <p className="flex-1">
+          {banner.connectorName} 연결이 끊겨 엔드포인트 {banner.endpointCount}개가 동작하지
+          않습니다. 다시 연결하세요.
+        </p>
+      )}
       <Button size="sm" variant="outline" asChild>
-        <Link to={`/endpoints/${banner.firstEndpointId}`}>다시 연결</Link>
+        <Link to={`/endpoints/${banner.firstEndpointId}`}>
+          {banner.fix === 'replace_key' ? '키 파일 교체' : '다시 연결'}
+        </Link>
       </Button>
     </div>
   );
@@ -57,9 +70,12 @@ function Banner({ banner }: { banner: ReauthBanner }) {
 function EndpointRow({
   endpoint,
   builtins,
+  authType,
 }: {
   endpoint: EndpointSummary;
   builtins: readonly Builtin[] | undefined;
+  // 커넥터 목록을 받기 전이면 undefined. 상태 안내를 인증 방식에 맞춘다
+  authType: ConnectorAuthView['type'] | undefined;
 }) {
   const { toolCounts } = endpoint;
   return (
@@ -87,7 +103,10 @@ function EndpointRow({
         )}
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={endpoint.status} />
+        <StatusBadge
+          status={endpoint.status}
+          hint={endpointStatusHint(endpoint.status, authType)}
+        />
         {/* 관리자가 적은 사용 중지 사유 (SCR-ADM-04 사용 중지) */}
         {endpoint.status === 'disabled' && endpoint.connector.disabledReason && (
           <p className="mt-1 max-w-48 text-xs text-muted-foreground">
@@ -183,6 +202,13 @@ export function EndpointListPage() {
   const endpoints = useQuery(endpointsQuery);
   const connectors = useQuery(connectorsQuery);
   const orphans = orphanConnectors(connectors.data);
+  // /api/endpoints는 커넥터 인증 방식을 주지 않아 커넥터 목록에서 찾는다
+  const authTypes = new Map(
+    connectors.data?.map((connector) => [connector.id, connector.auth.type]) ?? [],
+  );
+  const serviceAccountIds = new Set(
+    [...authTypes].filter(([, type]) => type === 'service_account').map(([id]) => id),
+  );
   const hasBuiltin =
     endpoints.data?.some((endpoint) => endpoint.connector.builtin !== null) ||
     orphans.some((connector) => connector.builtin !== null);
@@ -211,7 +237,7 @@ export function EndpointListPage() {
           </Link>
         </Button>
       </div>
-      {reauthBanners(endpoints.data).map((banner) => (
+      {reauthBanners(endpoints.data, serviceAccountIds).map((banner) => (
         <Banner key={banner.connectorId} banner={banner} />
       ))}
       {endpoints.data.length === 0 ? (
@@ -233,7 +259,12 @@ export function EndpointListPage() {
             </thead>
             <tbody>
               {endpoints.data.map((endpoint) => (
-                <EndpointRow key={endpoint.id} endpoint={endpoint} builtins={builtins.data} />
+                <EndpointRow
+                  key={endpoint.id}
+                  endpoint={endpoint}
+                  builtins={builtins.data}
+                  authType={authTypes.get(endpoint.connector.id)}
+                />
               ))}
             </tbody>
           </table>

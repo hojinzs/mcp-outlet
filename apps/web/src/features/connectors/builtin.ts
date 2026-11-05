@@ -133,11 +133,30 @@ const unpickableReasons: Record<Exclude<Connector['status'], 'ok'>, string> = {
   reauth_required: '계정 연결이 만료되었거나 취소되었습니다',
 };
 
+// 서비스 계정 키가 거부된 커넥터(키 폐기·손상). 고치려면 키 파일을 교체해야 한다.
+// gateway는 키 거부를 error와 연결 테스트 auth_failed로 남긴다. 그 전에는 reauth_required로 남겼으므로
+// 서비스 계정의 reauth_required도 키 거부로 본다. MCP 호출 중 거부는 lastTestResult를 바꾸지 않아
+// 연결 테스트를 다시 해야 여기에 걸린다
+export function serviceAccountKeyRejected(
+  connector: Pick<Connector, 'auth' | 'status' | 'lastTestResult'>,
+): boolean {
+  if (connector.auth.type !== 'service_account') return false;
+  if (connector.status === 'reauth_required') return true;
+  return connector.status === 'error' && connector.lastTestResult === 'auth_failed';
+}
+
 // 고를 수 없는 사유. 고를 수 있으면 null
 export function unpickableReason(connector: Connector): string | null {
   if (connector.disabledAt !== null) return '관리자가 사용 중지한 커넥터입니다';
   if (connector.status === 'ok') return null;
+  if (serviceAccountKeyRejected(connector)) return '서비스 계정 키가 거부되었습니다';
   return unpickableReasons[connector.status];
+}
+
+function detailFixLabel(connector: Connector): string {
+  if (serviceAccountKeyRejected(connector)) return '상세에서 키 교체';
+  if (connector.status === 'reauth_required') return '상세에서 다시 연결';
+  return '상세에서 다시 테스트';
 }
 
 // 이어하기 화면의 상태 사유. 이 화면에서 한 연결 테스트가 성공했으면 테스트 전 사유를 지운다.
@@ -167,13 +186,17 @@ export function unpickableGuide(
   // 관리자 사용 중지는 사용자가 고칠 수 없다
   if (connector.disabledAt !== null) return { reason, link: null };
   if (connector.endpointCount === 0) {
-    return { reason, link: { to: resumeLink(connector.id), label: '다시 연결·연결 테스트' } };
+    // 서비스 계정은 다시 연결이 없고 이어하기 화면에서 키 파일을 교체한다
+    const label =
+      connector.auth.type === 'service_account' ? '키 교체·연결 테스트' : '다시 연결·연결 테스트';
+    return { reason, link: { to: resumeLink(connector.id), label } };
   }
   const endpointId = endpointIds?.get(connector.id);
   if (endpointId === undefined) return { reason, link: null };
-  const label =
-    connector.status === 'reauth_required' ? '상세에서 다시 연결' : '상세에서 다시 테스트';
-  return { reason, link: { to: `/endpoints/${encodeURIComponent(endpointId)}`, label } };
+  return {
+    reason,
+    link: { to: `/endpoints/${encodeURIComponent(endpointId)}`, label: detailFixLabel(connector) },
+  };
 }
 
 // 서비스별 권한·API 안내. /api/builtins가 주지 않아 화면이 key로 고른다

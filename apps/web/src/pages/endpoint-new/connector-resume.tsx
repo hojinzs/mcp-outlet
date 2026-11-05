@@ -4,6 +4,7 @@ import { OAuthAppGuide } from '../../components/builtin/oauth-app-guide.tsx';
 import { OAuthClientFields } from '../../components/builtin/oauth-client-fields.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card, CardDescription, CardTitle } from '../../components/ui/card.tsx';
+import { serviceAccountKeyRejected } from '../../features/connectors/builtin.ts';
 import { connectorKindLabel } from '../../features/endpoints/connector-kind.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { ServiceAccountKeyPanel } from '../endpoint-detail/builtin-settings.tsx';
@@ -154,7 +155,11 @@ export function ConnectorResume({
             onClose={() => setReplacingKey(false)}
           />
         ) : (
-          <Button variant="outline" className="self-start" onClick={() => setReplacingKey(true)}>
+          <Button
+            variant={serviceAccountKeyRejected(connector) ? 'default' : 'outline'}
+            className="self-start"
+            onClick={() => setReplacingKey(true)}
+          >
             키 파일 교체
           </Button>
         ))}
