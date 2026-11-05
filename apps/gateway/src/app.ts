@@ -10,6 +10,7 @@ import { createSecretBox } from './crypto/secrets.ts';
 import type { Db } from './db/client.ts';
 import { createAuthGuards } from './http/auth-guard.ts';
 import { registerErrorHandlers, sendError } from './http/errors.ts';
+import { registerAdminRoutes } from './routes/admin.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
 import { registerBuiltinRoutes } from './routes/builtins.ts';
 import { registerConnectSecret } from './routes/connect-secret.ts';
@@ -98,6 +99,12 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
           clientId: config.OIDC_CLIENT_ID,
           hasClientSecret: Boolean(config.OIDC_CLIENT_SECRET),
         },
+      });
+      await registerAdminRoutes(api, {
+        db,
+        now: deps.now,
+        auditRetentionDays: config.AUDIT_RETENTION_DAYS,
+        requireAdmin: guards.requireAdmin,
       });
     },
     { prefix: '/api' },

@@ -66,7 +66,8 @@ export async function startFakeUpstream(options: { token?: string; jsonResponse?
       res.writeHead(307, { location: '/mcp' }).end();
       return;
     }
-    if (req.url !== '/mcp') {
+    // 토큰을 쿼리에 넣는 서버처럼 쿼리 문자열은 무시한다
+    if (req.url?.split('?')[0] !== '/mcp') {
       res.writeHead(404, { 'content-type': 'text/html' }).end('<h1>not here</h1>');
       return;
     }
