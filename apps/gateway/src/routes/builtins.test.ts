@@ -261,6 +261,34 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     expect(await waitForStatus('ok')).toBe('ok');
   });
 
+  it('툴 호출에서 Google이 권한 없음(403)을 주면 툴 결과로 알리고 커넥터는 정상으로 둔다', async () => {
+    const user = await createLoggedInUser(db, now());
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/endpoints',
+      cookies: user.cookies,
+      payload: {
+        name: 'GA',
+        allowedTools: ['ga4_run_report'],
+        connector: serviceAccountConnector(),
+      },
+    });
+    const endpoint = created.json();
+
+    google.setApiDenied(true);
+    const denied = await mcpCall(user, endpoint.id, runReport);
+    google.setApiDenied(false);
+    expect(denied.statusCode).toBe(200);
+    expect(denied.json().result.isError).toBe(true);
+    expect(denied.json().result.content[0].text).toContain('권한이 없거나 API가 꺼져 있습니다');
+    expect(await waitForAudit(endpoint.id, 1)).toHaveLength(1);
+    const [row] = await db
+      .select({ status: connectors.status })
+      .from(connectors)
+      .where(eq(connectors.id, endpoint.connector.id));
+    expect(row?.status).toBe('ok');
+  });
+
   it('OAuth: 연결 중 저장 → 동의 → 콜백 → 연결 테스트 → 엔드포인트 → 갱신 실패 시 재연결 안내', async () => {
     const user = await createLoggedInUser(db, now());
     const connectorId = await pendingOAuthConnector(user);

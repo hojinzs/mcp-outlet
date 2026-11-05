@@ -24,9 +24,10 @@ export class BuiltinApiError extends Error {
   }
 }
 
-// 업스트림이 자격증명을 거부한 경우(401·403). 툴 결과가 아니라 커넥터 오류로 다룬다
+// 업스트림이 자격증명을 거부한 경우(401). 툴 결과가 아니라 커넥터 오류로 다룬다.
+// 403(권한 없음·API 꺼짐·scope 부족)은 자격증명이 유효하므로 툴 결과로 돌려준다 (SCR-EP-01 상태 규칙)
 export function isCredentialRejection(error: BuiltinApiError): boolean {
-  return error.kind === 'auth_failed' || error.kind === 'permission_denied';
+  return error.kind === 'auth_failed';
 }
 
 const messages: Record<BuiltinErrorKind, string> = {

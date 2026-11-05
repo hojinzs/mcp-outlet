@@ -47,7 +47,7 @@ export interface BuiltinConnector {
   listTools(): Tool[];
   // 연결 테스트: 받은 토큰으로 가벼운 조회가 되는지 확인한다. 실패하면 BuiltinApiError를 던진다
   checkAccess(ctx: BuiltinCallContext): Promise<void>;
-  // 실패는 오류 결과로 돌려준다. 업스트림이 자격증명을 거부하면(auth_failed·permission_denied)
+  // 실패는 오류 결과로 돌려준다. 업스트림이 자격증명을 거부하면(auth_failed)
   // BuiltinApiError를 던진다
   callTool(
     name: string,

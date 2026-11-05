@@ -97,7 +97,7 @@ describe('Google Analytics 4 + Search Console 툴', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('Google 400은 인자 오류 설명을 결과로 주고, 401·403은 분류값만 담아 던진다', async () => {
+  it('Google 400은 인자 오류 설명을, 403은 권한 안내를 결과로 주고, 401은 분류값만 담아 던진다', async () => {
     const invalid = fakeGoogle(() =>
       json(
         {
@@ -130,11 +130,11 @@ describe('Google Analytics 4 + Search Console 툴', () => {
         403,
       ),
     );
-    const thrown = await googleAnalytics
-      .callTool('gsc_list_sites', {}, denied.ctx)
-      .catch((error: unknown) => error);
-    expect(thrown).toEqual(new BuiltinApiError('permission_denied'));
-    expect((thrown as Error).message).not.toContain('secret-detail');
+    // 403은 자격증명이 유효하므로 커넥터 오류가 아니라 툴 결과로 돌려준다
+    const forbidden = await googleAnalytics.callTool('gsc_list_sites', {}, denied.ctx);
+    expect(forbidden.isError).toBe(true);
+    expect(textOf(forbidden)).toContain('권한이 없거나 API가 꺼져 있습니다');
+    expect(textOf(forbidden)).not.toContain('secret-detail');
 
     const unauthorized = fakeGoogle(() => json({}, 401));
     await expect(googleAnalytics.callTool('gsc_list_sites', {}, unauthorized.ctx)).rejects.toEqual(
