@@ -14,13 +14,33 @@ export function isDestructive(tool: Tool): boolean {
   return tool.annotations?.destructiveHint === true;
 }
 
-export function selectAll(tools: readonly Tool[]): Set<string> {
+function toolNames(tools: readonly Tool[]): Set<string> {
   return new Set(tools.map((tool) => tool.name));
 }
 
+// 일괄 선택은 커넥터 툴 목록에만 적용한다. 목록에 없는 이름(사라진 툴)의 선택은
+// 사용자가 체크를 직접 풀 때만 빠지므로 그대로 둔다 (SCR-EP-03 사라진 툴)
+function replaceAmong(
+  selected: ReadonlySet<string>,
+  tools: readonly Tool[],
+  picked: readonly Tool[],
+): Set<string> {
+  const names = toolNames(tools);
+  const kept = [...selected].filter((name) => !names.has(name));
+  return new Set([...kept, ...picked.map((tool) => tool.name)]);
+}
+
+export function selectAll(selected: ReadonlySet<string>, tools: readonly Tool[]): Set<string> {
+  return replaceAmong(selected, tools, tools);
+}
+
 // 읽기 전용만 선택하고 나머지는 해제한다
-export function selectReadOnly(tools: readonly Tool[]): Set<string> {
-  return new Set(tools.filter(isReadOnly).map((tool) => tool.name));
+export function selectReadOnly(selected: ReadonlySet<string>, tools: readonly Tool[]): Set<string> {
+  return replaceAmong(selected, tools, tools.filter(isReadOnly));
+}
+
+export function clearAll(selected: ReadonlySet<string>, tools: readonly Tool[]): Set<string> {
+  return replaceAmong(selected, tools, []);
 }
 
 export function toggle(selected: ReadonlySet<string>, name: string, on: boolean): Set<string> {
@@ -56,7 +76,7 @@ export function countNotReadOnly(tools: readonly Tool[], selected: ReadonlySet<s
 
 // 툴 목록이 바뀐 뒤에도 남아 있는 것만 선택을 유지한다 (저장 직전 tools_changed)
 export function keepAvailable(selected: ReadonlySet<string>, tools: readonly Tool[]): Set<string> {
-  const names = selectAll(tools);
+  const names = toolNames(tools);
   return new Set([...selected].filter((name) => names.has(name)));
 }
 

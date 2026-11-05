@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import type { Tool } from '../api/types.ts';
 import {
+  clearAll,
   filterTools,
   firstLine,
   isDestructive,
@@ -88,13 +89,17 @@ export function ToolSelector({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={() => onChange(selectAll(tools))}>
+        <Button size="sm" variant="outline" onClick={() => onChange(selectAll(selected, tools))}>
           전체 선택
         </Button>
-        <Button size="sm" variant="outline" onClick={() => onChange(selectReadOnly(tools))}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onChange(selectReadOnly(selected, tools))}
+        >
           읽기 전용만
         </Button>
-        <Button size="sm" variant="outline" onClick={() => onChange(new Set())}>
+        <Button size="sm" variant="outline" onClick={() => onChange(clearAll(selected, tools))}>
           모두 해제
         </Button>
         {tools.length >= TOOL_SEARCH_THRESHOLD && (
