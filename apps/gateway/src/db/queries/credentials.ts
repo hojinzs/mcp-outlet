@@ -45,6 +45,21 @@ export async function deleteUserCredential(
     .where(and(eq(credentials.connectorId, connectorId), eq(credentials.userId, userId)));
 }
 
+// 키 회전 일괄 재암호화 대상을 고르려고 모든 행의 암호문을 읽는다 (scope 무관)
+export async function listCredentialCiphertexts(db: DbOrTx) {
+  return db.select({ id: credentials.id, ciphertext: credentials.ciphertext }).from(credentials);
+}
+
+// 재암호화하는 동안 토큰 갱신이 같은 행을 바꾸지 못하게 잠근다
+export async function lockCredential(db: DbOrTx, id: string) {
+  const [row] = await db
+    .select({ id: credentials.id, ciphertext: credentials.ciphertext })
+    .from(credentials)
+    .where(eq(credentials.id, id))
+    .for('update');
+  return row;
+}
+
 // 키 회전 뒤 이전 키로 남은 암호문을 현재 키로 바꿔 쓴다. updatedAt(자격증명 변경 시각)은 그대로 둔다
 export async function replaceCiphertext(db: DbOrTx, id: string, ciphertext: string): Promise<void> {
   await db
