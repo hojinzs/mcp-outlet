@@ -217,21 +217,34 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 API (DB)', () => {
     });
     const { id, connector: ownedConnector } = created.json();
     const other = await setup();
-    for (const [method, url] of [
+    const connectorUrl = `/api/connectors/${ownedConnector.id}`;
+    const cases: [method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object][] = [
       ['GET', `/api/endpoints/${id}`],
-      ['PATCH', `/api/endpoints/${id}`],
+      ['PATCH', `/api/endpoints/${id}`, { name: 'x' }],
       ['DELETE', `/api/endpoints/${id}`],
       ['GET', `/api/endpoints/${id}/calls`],
       ['GET', `/api/endpoints/${id}/connect-info`],
-      ['GET', `/api/connectors/${ownedConnector.id}`],
-      ['POST', `/api/connectors/${ownedConnector.id}/test`],
-      ['DELETE', `/api/connectors/${ownedConnector.id}`],
+      ['GET', connectorUrl],
+      ['PATCH', connectorUrl, { name: 'x' }],
+      ['GET', `${connectorUrl}/tools`],
+      ['POST', `${connectorUrl}/test`],
+      ['POST', `${connectorUrl}/oauth/start`, {}],
+      ['DELETE', connectorUrl],
+      // 다른 사람의 커넥터로 엔드포인트를 만들 수 없다
+      [
+        'POST',
+        '/api/endpoints',
+        { name: 'x', allowedTools: ['read_item'], connectorId: ownedConnector.id },
+      ],
       ['GET', '/api/endpoints/not-a-uuid'],
-    ] as const) {
-      const res = await other.call(method, url, method === 'PATCH' ? { name: 'x' } : undefined);
+    ];
+    for (const [method, url, payload] of cases) {
+      const res = await other.call(method, url, payload);
       expect(res.statusCode, `${method} ${url}`).toBe(404);
-      expect(res.json().error.code).toBe('not_found');
+      expect(res.json().error.code, `${method} ${url}`).toBe('not_found');
     }
+    // 위 요청들이 소유자의 커넥터를 바꾸지 않았다
+    expect((await owner.call('GET', connectorUrl)).json().name).toBe('Fake MCP');
   });
 
   it('커넥터 재테스트·토큰 교체·삭제', async () => {
