@@ -84,7 +84,8 @@ function denialOf(
   if (isToolCall(message) && !allowed.has(toolNameOf(message))) {
     return {
       code: RPC_ERROR.invalidParams,
-      message: `허용되지 않은 툴입니다: ${toolNameOf(message)}`,
+      // 클라이언트가 보낸 이름을 되돌려 주므로 감사 로그와 같은 길이로 자른다
+      message: `허용되지 않은 툴입니다: ${auditToolName(toolNameOf(message))}`,
     };
   }
   if (isBlockedMethod(message)) {

@@ -146,8 +146,8 @@ describe.skipIf(!testDatabaseUrl)('MCP 중계의 커넥터 상태 (DB)', () => {
     const res = await call(runtimeCutMidBody(), access, toolCall);
     expect(res.status).toBe(200);
     const body = JSON.parse(res.body as string);
-    expect(body).toMatchObject({ jsonrpc: '2.0', id: 1, error: { code: expect.any(Number) } });
-    expect(body.error.message).toContain('연결하지 못했습니다');
+    expect(body).toMatchObject({ jsonrpc: '2.0', id: 1, result: { isError: true } });
+    expect(body.result.content[0].text).toContain('연결하지 못했습니다');
     expect(res.body).not.toContain('upstream-secret');
     await vi.waitFor(async () =>
       expect(await auditRows(access.endpoint.id)).toEqual([

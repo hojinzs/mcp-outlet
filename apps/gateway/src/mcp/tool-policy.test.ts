@@ -226,6 +226,14 @@ describe('deniedAuditNames', () => {
     expect(audited[0]).toBe('tool_0');
   });
 
+  it('거부 문구에 되돌려 주는 툴 이름도 같은 상한으로 자른다', () => {
+    const plan = planInbound(call(1, 'z'.repeat(5000)), ['read_item']);
+    if (plan.kind !== 'deny') throw new Error('expected deny');
+    const message = (plan.response as { error: { message: string } }).error.message;
+    expect(message).toContain('z'.repeat(MAX_TOOL_NAME_LENGTH));
+    expect(message).not.toContain('z'.repeat(MAX_TOOL_NAME_LENGTH + 1));
+  });
+
   it('잘라도 허용목록 판정은 원래 이름으로 한다', () => {
     const allowedName = 'a'.repeat(MAX_TOOL_NAME_LENGTH);
     const plan = planInbound(call(1, `${allowedName}x`), [allowedName]);

@@ -10,6 +10,7 @@ import {
   type CallToolResult,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { type FailureKind, toolFailureResult } from '../mcp/failures.ts';
 import { type Builtins, resolveBuiltin } from '../services/builtin-auth.ts';
 import type { UpstreamTokens } from '../services/upstream-tokens.ts';
 import { TokenError, type TokenErrorKind } from '../upstream/oauth2.ts';
@@ -52,16 +53,17 @@ const apiFailure: Record<BuiltinErrorKind, Failure> = {
   upstream_error: 'upstream_error',
 };
 
-// 토큰을 받지 못하면 툴 결과 오류로 알린다. 다시 연결해야 하면 관리 화면 주소를 붙인다 (F-RUN-03)
+const tokenToolFailure: Record<TokenErrorKind, FailureKind> = {
+  invalid_grant: 'reauth_required',
+  token_error: 'auth_failed',
+  timeout: 'timeout',
+  unreachable: 'unreachable',
+};
+
+// 토큰을 받지 못하면 원격 커넥터와 같은 문구의 툴 결과로 알린다 (F-RUN-03 툴 호출 실패 형식)
 function tokenErrorResult(error: unknown, adminUrl: string): CallToolResult {
   const kind = error instanceof TokenError ? error.kind : 'token_error';
-  const text =
-    kind === 'invalid_grant'
-      ? `커넥터의 계정 연결이 만료되었거나 취소되었습니다. 관리 화면에서 다시 연결하세요: ${adminUrl}`
-      : kind === 'token_error'
-        ? `업스트림이 토큰 발급을 거부했습니다. 관리 화면에서 커넥터 설정을 확인하세요: ${adminUrl}`
-        : '업스트림 인증 서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.';
-  return { isError: true, content: [{ type: 'text', text }] };
+  return toolFailureResult(tokenToolFailure[kind], adminUrl);
 }
 
 function methodNotAllowed(): Response {

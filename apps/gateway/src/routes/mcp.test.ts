@@ -406,7 +406,7 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     expect(body.error.code).toBe(-32700);
   });
 
-  it('업스트림 인증 실패는 원문 없이 MCP 오류와 관리 화면 링크로 정리하고 커넥터를 오류 상태로 둔다', async () => {
+  it('tools/call의 업스트림 인증 실패는 isError 툴 결과에 관리 화면 링크를 담고 커넥터를 오류 상태로 둔다', async () => {
     const { url, token, endpoint, user } = await newEndpoint();
     const { client } = await connect(url, token);
     // 업스트림 토큰이 바뀐 상황
@@ -418,11 +418,9 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
         and(eq(credentials.connectorId, endpoint.connector.id), eq(credentials.userId, user.id)),
       );
     try {
-      const error = await client
-        .callTool({ name: 'read_item', arguments: { id: '1' } })
-        .catch((caught: unknown) => caught);
-      expect(error).toBeInstanceOf(McpError);
-      const message = (error as McpError).message;
+      const result = await client.callTool({ name: 'read_item', arguments: { id: '1' } });
+      expect(result.isError).toBe(true);
+      const message = (result.content as { type: string; text: string }[])[0]?.text ?? '';
       expect(message).toContain('인증');
       expect(message).toContain(`https://outlet.test/admin/endpoints/${endpoint.id}`);
       expect(message).not.toContain('upstream says');
@@ -437,6 +435,38 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
       expect(row?.status).toBe('error');
       expect(await auditRows(endpoint.id)).toEqual([{ toolName: 'read_item', result: 'error' }]);
     });
+  });
+
+  it('initialize 실패는 JSON-RPC 오류로 두고, 배치에서는 tools/call만 툴 결과로 준다', async () => {
+    const { url, token, endpoint, user } = await newEndpoint();
+    const secrets = createSecretBox({ current: config.ENCRYPTION_KEY });
+    await db
+      .update(credentials)
+      .set({ ciphertext: secrets.encrypt(JSON.stringify({ TOKEN: 'revoked' })) })
+      .where(
+        and(eq(credentials.connectorId, endpoint.connector.id), eq(credentials.userId, user.id)),
+      );
+    const link = `https://outlet.test/admin/endpoints/${endpoint.id}`;
+
+    const init = await post(url, token, initialize);
+    expect(init.status).toBe(200);
+    const initBody = (await init.json()) as { result?: unknown; error?: { message: string } };
+    expect(initBody.result).toBeUndefined();
+    expect(initBody.error?.message).toContain(link);
+
+    const batch = await post(url, token, [
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'read_item', arguments: {} } },
+    ]);
+    const items = (await batch.json()) as {
+      id: number;
+      result?: { isError: boolean; content: { text: string }[] };
+      error?: { code: number };
+    }[];
+    expect(items[0]?.error?.code).toBe(-32000);
+    expect(items[1]?.error).toBeUndefined();
+    expect(items[1]?.result?.isError).toBe(true);
+    expect(items[1]?.result?.content[0]?.text).toContain(link);
   });
 
   it('클라이언트가 끊으면 업스트림 스트림도 끊는다', async () => {

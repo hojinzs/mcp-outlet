@@ -219,7 +219,7 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     return res.json().id as string;
   }
 
-  it('툴 호출에서 Google이 자격증명을 거부하면(401) MCP 오류로 답하고 커넥터를 오류로, 성공하면 정상으로 되돌린다', async () => {
+  it('툴 호출에서 Google이 자격증명을 거부하면(401) isError 툴 결과에 관리 화면 링크를 담고 커넥터를 오류로, 성공하면 정상으로 되돌린다', async () => {
     const user = await createLoggedInUser(db, now());
     const created = await app.inject({
       method: 'POST',
@@ -250,7 +250,10 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     const denied = await mcpCall(user, endpoint.id, runReport);
     google.setApiUnauthorized(false);
     expect(denied.statusCode).toBe(200);
-    expect(denied.json().error.message).toContain(
+    // JSON-RPC 오류가 아니라 툴 결과로 준다 (F-RUN-03 툴 호출 실패 형식)
+    expect(denied.json().error).toBeUndefined();
+    expect(denied.json().result.isError).toBe(true);
+    expect(denied.json().result.content[0].text).toContain(
       `인증에 실패했습니다. 관리 화면에서 커넥터 설정을 확인하세요: https://outlet.test/admin/endpoints/${endpoint.id}`,
     );
     expect(await waitForStatus('error')).toBe('error');

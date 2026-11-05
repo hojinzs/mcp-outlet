@@ -3,6 +3,7 @@ import type { Db } from '../db/client.ts';
 import { insertAuditLog } from '../db/queries/audit-logs.ts';
 import { type ConnectorRow, setConnectorHealth } from '../db/queries/connectors.ts';
 import { type EndpointRow, touchLastCalled } from '../db/queries/endpoints.ts';
+import { type FailureKind, failureMessage, toolFailureResult } from '../mcp/failures.ts';
 import { errorResponse, isRequest, type JsonRpcResponse, RPC_ERROR } from '../mcp/jsonrpc.ts';
 import { type BoundedText, MAX_UPSTREAM_MESSAGE_BYTES, readBoundedText } from '../mcp/limits.ts';
 import { rewriteSse } from '../mcp/sse.ts';
@@ -15,7 +16,7 @@ import {
   toolCallNames,
 } from '../mcp/tool-policy.ts';
 import { type Runtimes, runtimeFor } from '../runtimes/index.ts';
-import { UpstreamError, type UpstreamErrorKind } from '../upstream/safe-fetch.ts';
+import { UpstreamError } from '../upstream/safe-fetch.ts';
 import { loadCredentials } from './credentials.ts';
 
 // /c/{id}/mcp 요청 하나를 업스트림에 중계한다 (F-EP-02, F-RUN-01·03, F-UI-03).
@@ -59,8 +60,6 @@ const REQUEST_HEADERS = [
 const RESPONSE_HEADERS = ['content-type', 'mcp-session-id'];
 
 const LAST_CALLED_INTERVAL_MS = 60_000;
-
-type FailureKind = UpstreamErrorKind | 'auth_failed' | 'upstream_error';
 
 // JSON 본문을 다 받지 못한 이유. 끊김·시간 초과는 연결 실패와 같게 다룬다
 const BODY_FAILURE = {
@@ -119,39 +118,26 @@ export function createMcpProxy(deps: McpProxyDeps) {
     return new URL(`/admin/endpoints/${endpointId}`, deps.publicBaseUrl).toString();
   }
 
-  // 업스트림 원문 대신 고정 문구만 준다. 고칠 수 있는 문제면 관리 UI 링크를 붙인다 (F-RUN-03)
-  function failureMessage(kind: FailureKind, endpointId: string): string {
-    const fix = `관리 화면에서 커넥터 설정을 확인하세요: ${adminUrl(endpointId)}`;
-    switch (kind) {
-      case 'auth_failed':
-        return `커넥터가 업스트림 인증에 실패했습니다. ${fix}`;
-      case 'blocked_address':
-      case 'insecure_scheme':
-        return `커넥터 주소가 허용되지 않는 주소입니다. ${fix}`;
-      case 'redirect':
-        return `커넥터가 다른 주소로 보냈습니다. ${fix}`;
-      case 'timeout':
-        return '커넥터 응답이 너무 늦습니다. 잠시 후 다시 시도하세요.';
-      case 'unreachable':
-        return `커넥터에 연결하지 못했습니다. ${fix}`;
-      case 'upstream_error':
-        return '커넥터가 요청을 처리하지 못했습니다.';
-    }
-  }
-
-  // 요청이 있으면 요청마다 JSON-RPC 오류로, 없으면(GET·DELETE·알림) 502로 답한다
+  // 요청이 있으면 요청마다 답하고, 없으면(GET·DELETE·알림) 502로 답한다.
+  // tools/call은 isError 툴 결과로, 그 밖의 요청은 JSON-RPC 오류로 준다 (F-RUN-03 툴 호출 실패 형식)
   function failureReply(
     request: McpHttpRequest,
     kind: FailureKind,
     endpointId: string,
   ): McpHttpResponse {
-    const message = failureMessage(kind, endpointId);
+    const url = adminUrl(endpointId);
+    const message = failureMessage(kind, url);
     const json = request.body?.json;
     const requests = (Array.isArray(json) ? json : [json]).filter(isRequest);
     if (requests.length === 0) {
       return jsonReply(502, errorResponse(null, RPC_ERROR.upstream, message));
     }
-    const responses = requests.map((item) => errorResponse(item.id, RPC_ERROR.upstream, message));
+    const responses = requests.map(
+      (item): JsonRpcResponse =>
+        item.method === 'tools/call'
+          ? { jsonrpc: '2.0', id: item.id, result: toolFailureResult(kind, url) }
+          : errorResponse(item.id, RPC_ERROR.upstream, message),
+    );
     return jsonReply(200, Array.isArray(json) ? responses : (responses[0] as JsonRpcResponse));
   }
 
@@ -272,7 +258,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
       await response.body?.cancel();
       tap.settle();
       if (status === 400 || status === 404 || status === 405) {
-        const message = failureMessage('upstream_error', endpoint.id);
+        const message = failureMessage('upstream_error', adminUrl(endpoint.id));
         return { ...jsonReply(status, errorResponse(null, RPC_ERROR.upstream, message)), headers };
       }
       return failureReply(request, 'upstream_error', endpoint.id);
