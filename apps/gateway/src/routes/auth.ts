@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { readDeniedEmail, serializeDeniedEmail } from '../auth/denied-email.ts';
 import {
   codeChallengeOf,
   createLoginState,
@@ -10,6 +11,8 @@ import { type OidcClient, OidcError } from '../auth/oidc.ts';
 import type { Config } from '../config.ts';
 import type { Db } from '../db/client.ts';
 import {
+  DENIED_EMAIL_COOKIE,
+  deniedEmailCookieOptions,
   ID_TOKEN_COOKIE,
   idTokenCookieOptions,
   LOGIN_STATE_COOKIE,
@@ -121,11 +124,16 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
     // IdP 로그아웃의 id_token_hint로만 쓴다. 접근 거부(세션 없음)에서도 "다른 계정으로 로그인"에 필요하다
     reply.setCookie(ID_TOKEN_COOKIE, idToken, idTokenCookieOptions(config));
     if (result.kind === 'denied') {
-      // 세션 없이 접근 거부 화면으로. 이메일은 문구에만 쓴다 (SCR-COM-03 not_member)
-      const params = new URLSearchParams({ reason: 'not_member' });
-      if (result.email) params.set('email', result.email);
-      return reply.redirect(`/admin/forbidden?${params}`);
+      // 세션 없이 접근 거부 화면으로. 이메일은 문구에만 쓰고 주소 대신 쿠키로 넘긴다 (SCR-COM-03 not_member)
+      if (result.email) {
+        const value = serializeDeniedEmail(result.email, config.SESSION_SECRET, now());
+        reply.setCookie(DENIED_EMAIL_COOKIE, value, deniedEmailCookieOptions(config));
+      } else {
+        reply.clearCookie(DENIED_EMAIL_COOKIE, deniedEmailCookieOptions(config));
+      }
+      return reply.redirect('/admin/forbidden?reason=not_member');
     }
+    reply.clearCookie(DENIED_EMAIL_COOKIE, deniedEmailCookieOptions(config));
     reply.setCookie(SESSION_COOKIE, result.token, sessionCookieOptions(config, result.expiresAt));
     return reply.redirect(loginState.returnTo);
   });
@@ -141,6 +149,11 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
       return { idpLogout: false };
     }
   });
+
+  // 접근 거부 화면(세션 없음)이 문구에 쓸 이메일. 쿠키가 없거나 만료·위조면 null
+  app.get('/auth/denied', async (request) => ({
+    email: readDeniedEmail(request.cookies[DENIED_EMAIL_COOKIE], config.SESSION_SECRET, now()),
+  }));
 
   // 일반 로그아웃은 gateway 세션만, idp=true면 IdP 세션까지 끝낼 주소를 준다 (SCR-COM-01 결정 사항).
   // 세션이 없어도 성공한다. 접근 거부 화면의 "다른 계정으로 로그인"도 여기를 쓴다

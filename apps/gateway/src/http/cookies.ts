@@ -1,4 +1,5 @@
 import type { CookieSerializeOptions } from '@fastify/cookie';
+import { DENIED_EMAIL_TTL_MS } from '../auth/denied-email.ts';
 import { LOGIN_STATE_TTL_MS } from '../auth/login-state.ts';
 import { UPSTREAM_STATE_TTL_MS } from '../auth/upstream-state.ts';
 import type { Config } from '../config.ts';
@@ -11,6 +12,8 @@ export const UPSTREAM_STATE_COOKIE = 'outlet_upstream';
 // IdP 로그아웃(end_session)의 id_token_hint. 로그아웃 경로에만 보낸다.
 // 세션 테이블을 바꾸지 않으려고 DB 대신 쿠키에 둔다
 export const ID_TOKEN_COOKIE = 'outlet_id_token';
+// 접근 거부 화면의 이메일. 화면이 읽는 GET /auth/denied에만 보낸다
+export const DENIED_EMAIL_COOKIE = 'outlet_denied';
 
 // 리버스 프록시 뒤에서도 외부 주소 기준으로 Secure를 정한다
 function isSecure(config: Config): boolean {
@@ -49,5 +52,15 @@ export function upstreamStateCookieOptions(config: Config): CookieSerializeOptio
     sameSite: 'lax',
     secure: isSecure(config),
     maxAge: UPSTREAM_STATE_TTL_MS / 1000,
+  };
+}
+
+export function deniedEmailCookieOptions(config: Config): CookieSerializeOptions {
+  return {
+    path: '/auth/denied',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isSecure(config),
+    maxAge: DENIED_EMAIL_TTL_MS / 1000,
   };
 }

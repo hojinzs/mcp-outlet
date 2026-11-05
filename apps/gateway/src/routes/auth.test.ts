@@ -134,9 +134,54 @@ describe.skipIf(!testDatabaseUrl)('관리 UI 로그인 (DB)', () => {
     const claims = { ...member(), groups: ['Someone Else'] };
     const res = await login(s, claims);
     expect(res.statusCode).toBe(302);
-    expect(res.headers.location).toBe('/admin/forbidden?reason=not_member&email=u%40test');
+    // 이메일은 주소에 싣지 않는다
+    expect(res.headers.location).toBe('/admin/forbidden?reason=not_member');
     expect(sessionCookie(res)).toBeUndefined();
     expect(await db.select().from(users).where(eq(users.sub, claims.sub))).toHaveLength(0);
+  });
+
+  it('접근 거부 화면은 서명 쿠키로 이메일을 받고, 10분이 지나거나 위조하면 null', async () => {
+    const s = await setup();
+    const res = await login(s, { ...member(), groups: ['Someone Else'] });
+    const denied = res.cookies.find((c) => c.name === 'outlet_denied');
+    expect(denied).toMatchObject({
+      httpOnly: true,
+      sameSite: 'Lax',
+      secure: true,
+      path: '/auth/denied',
+      maxAge: 600,
+    });
+    expect(denied?.value).not.toContain('u@test');
+    const read = (value: string) =>
+      s.app.inject({ url: '/auth/denied', cookies: { outlet_denied: value } });
+
+    const ok = await read(denied?.value ?? '');
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ email: 'u@test' });
+    expect((await s.app.inject('/auth/denied')).json()).toEqual({ email: null });
+    // 다른 이메일에 원래 서명을 붙여도 받지 않는다
+    const signature = (denied?.value ?? '').split('.').at(-1);
+    const forged = Buffer.from(JSON.stringify({ email: 'x@evil', expiresAt: 9e15 })).toString(
+      'base64url',
+    );
+    expect((await read(`${forged}.${signature}`)).json()).toEqual({ email: null });
+    s.advance(10 * 60 * 1000);
+    expect((await read(denied?.value ?? '')).json()).toEqual({ email: null });
+  });
+
+  it('이메일 없이 거부되거나 로그인에 성공하면 이전 거부 쿠키를 지운다', async () => {
+    const s = await setup();
+    const noEmail = await login(s, { sub: `sub-${randomUUID()}`, groups: [] });
+    expect(noEmail.headers.location).toBe('/admin/forbidden?reason=not_member');
+    expect(noEmail.cookies.find((c) => c.name === 'outlet_denied')).toMatchObject({
+      value: '',
+      path: '/auth/denied',
+    });
+    const ok = await login(s, member());
+    expect(ok.cookies.find((c) => c.name === 'outlet_denied')).toMatchObject({
+      value: '',
+      path: '/auth/denied',
+    });
   });
 
   it('state 위조·임시 쿠키 없음은 state_mismatch', async () => {
