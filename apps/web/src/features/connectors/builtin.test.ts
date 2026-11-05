@@ -90,6 +90,7 @@ describe('계정 연결 복귀', () => {
     expect(connectOutcome(new URLSearchParams('connector=c1&connected=1'))).toBe('connected');
     expect(connectOutcome(new URLSearchParams('connect_error=cancelled'))).toBe('cancelled');
     expect(connectOutcome(new URLSearchParams('connect_error=failed'))).toBe('failed');
+    expect(connectOutcome(new URLSearchParams('connect_error=test_failed'))).toBe('test_failed');
     expect(connectOutcome(new URLSearchParams('connect_error=other'))).toBe('failed');
     expect(connectOutcome(new URLSearchParams('connector=c1'))).toBeNull();
   });

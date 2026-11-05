@@ -64,18 +64,21 @@ export function connectorTestMessage(runtime: ConnectorRuntime, result: string):
 }
 
 // 업스트림 동의 뒤 gateway가 returnTo에 붙여 돌려보내는 결과
-export type ConnectOutcome = 'connected' | 'cancelled' | 'failed';
+export type ConnectOutcome = 'connected' | 'cancelled' | 'failed' | 'test_failed';
 
 export function connectOutcome(params: URLSearchParams): ConnectOutcome | null {
   if (params.get('connected') === '1') return 'connected';
   const error = params.get('connect_error');
   if (error === null) return null;
-  return error === 'cancelled' ? 'cancelled' : 'failed';
+  if (error === 'cancelled' || error === 'test_failed') return error;
+  return 'failed';
 }
 
 export const connectErrorMessages: Record<Exclude<ConnectOutcome, 'connected'>, string> = {
   cancelled: '계정 연결을 취소했습니다',
   failed: '계정 연결에 실패했습니다. Client ID·Secret과 리디렉션 URI를 확인하세요',
+  // 재연결(SCR-EP-03): 토큰은 받았지만 tools/list가 실패해 커넥터가 오류 상태로 남음
+  test_failed: '계정은 연결했지만 연결 테스트에 실패했습니다. 연결한 계정의 권한을 확인하세요',
 };
 
 // 새로고침해도 결과를 다시 처리하지 않게 쿼리에서 지운다
