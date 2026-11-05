@@ -273,7 +273,7 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
       client_id: FAKE_OAUTH_CLIENT.clientId,
       redirect_uri: 'https://outlet.test/auth/upstream/callback',
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: 'consent select_account',
       code_challenge_method: 'S256',
       response_type: 'code',
     });

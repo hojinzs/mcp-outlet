@@ -13,8 +13,9 @@ export function googleOAuth2(scopes: readonly string[]): BuiltinOAuth2 {
     tokenUrl: TOKEN_URL,
     // 연결된 계정 이메일을 화면에 보여주려고 openid email을 함께 받는다
     scopes: ['openid', 'email', ...scopes],
-    // offline + consent: 다시 연결할 때도 refresh token을 새로 받는다
-    authorizationParams: { access_type: 'offline', prompt: 'consent' },
+    // offline + consent: 다시 연결할 때도 refresh token을 새로 받는다.
+    // select_account: 브라우저의 Google 세션과 상관없이 계정을 고르게 한다 (SCR-EP-03 다른 계정으로 바꾸기)
+    authorizationParams: { access_type: 'offline', prompt: 'consent select_account' },
   };
 }
 
