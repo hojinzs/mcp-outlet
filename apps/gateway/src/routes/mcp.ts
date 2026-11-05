@@ -131,7 +131,13 @@ export async function registerMcpRoutes(app: FastifyInstance, deps: McpRouteDeps
         }
 
         const endpointId = z.uuid().safeParse(id).success ? id : null;
-        const access = await resolveMcpAccess(deps.db, claims, endpointId, deps.policy);
+        const access = await resolveMcpAccess(
+          deps.db,
+          claims,
+          endpointId,
+          deps.policy,
+          request.log,
+        );
         if (access.kind === 'connector_disabled') {
           deps.proxy.recordDenied(access, request.body as McpRequestBody | undefined);
         }

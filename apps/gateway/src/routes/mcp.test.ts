@@ -176,6 +176,36 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     expect(me.statusCode).toBe(401);
   });
 
+  it('groups 클레임이 없는 토큰은 저장된 groups로 판정하고 groups·role·세션을 그대로 둔다', async () => {
+    const { url, user } = await newEndpoint();
+    await db
+      .update(users)
+      .set({ groups: [TEST_GROUPS.admins], role: 'admin' })
+      .where(eq(users.sub, user.sub));
+    const token = await idp.signAccessToken({ sub: user.sub, email: 'mcp@test' });
+    expect((await post(url, token, initialize)).status).toBe(200);
+    const [row] = await db.select().from(users).where(eq(users.sub, user.sub));
+    expect(row).toMatchObject({ groups: [TEST_GROUPS.admins], role: 'admin' });
+    const admin = await app.inject({ url: '/api/admin/users', cookies: user.cookies });
+    expect(admin.statusCode).toBe(200);
+  });
+
+  it('groups 클레임이 없고 관리 UI에 로그인한 적 없는 사용자는 그룹 밖으로 본다', async () => {
+    const token = await idp.signAccessToken({ sub: `never-${UNKNOWN_ID}` });
+    expect((await post(`${base}/c/${UNKNOWN_ID}/mcp`, token, initialize)).status).toBe(403);
+  });
+
+  it('groups 클레임이 빈 배열이면 그룹 밖이고 role과 세션을 거둔다', async () => {
+    const { url, user } = await newEndpoint();
+    await db.update(users).set({ role: 'admin' }).where(eq(users.sub, user.sub));
+    const token = await idp.signAccessToken({ sub: user.sub, groups: [] });
+    expect((await post(url, token, initialize)).status).toBe(403);
+    const [row] = await db.select().from(users).where(eq(users.sub, user.sub));
+    expect(row).toMatchObject({ groups: [], role: 'user' });
+    const me = await app.inject({ url: '/api/admin/users', cookies: user.cookies });
+    expect(me.statusCode).toBe(401);
+  });
+
   it('엔드포인트 비활성·커넥터 사용 중지는 다음 요청부터 거부한다', async () => {
     const { url, token, endpoint } = await newEndpoint();
     expect((await post(url, token, initialize)).status).toBe(200);

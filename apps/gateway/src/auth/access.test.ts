@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideAccess, extractGroups } from './access.ts';
+import { decideAccess, extractGroups, readGroupsClaim } from './access.ts';
 
 const policy = { groupsClaim: 'groups', loginGroups: ['Users', 'Admins'], adminGroups: ['Admins'] };
 
@@ -8,6 +8,14 @@ describe('extractGroups', () => {
     expect(extractGroups({ groups: ['a', 1, 'b'] }, 'groups')).toEqual(['a', 'b']);
     expect(extractGroups({ roles: 'a' }, 'roles')).toEqual(['a']);
     expect(extractGroups({}, 'groups')).toEqual([]);
+  });
+});
+
+describe('readGroupsClaim', () => {
+  it('클레임이 없으면 null, 빈 배열이면 빈 목록', () => {
+    expect(readGroupsClaim({}, 'groups')).toBeNull();
+    expect(readGroupsClaim({ groups: [] }, 'groups')).toEqual([]);
+    expect(readGroupsClaim({ groups: 'a' }, 'groups')).toEqual(['a']);
   });
 });
 
