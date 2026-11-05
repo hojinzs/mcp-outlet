@@ -181,6 +181,8 @@ export async function createEndpoint(
 
   const existing = await findConnector(deps.db, ownerId, input.connectorId);
   if (!existing) throw new ServiceError('not_found');
+  // 만들어도 MCP 호출은 거부되므로 생성 단계에서 막는다 (SCR-ADM-04 사용 중지)
+  if (existing.connector.disabledAt) throw new ServiceError('connector_disabled');
   const knownTools = toolNames(existing.connector.toolsCache ?? []);
   assertToolsAvailable(allowedTools, knownTools);
   const endpoint = await insertEndpoint(deps.db, {

@@ -18,6 +18,7 @@ const messages = {
   limit_exceeded: '만들 수 있는 개수의 상한에 도달했습니다.',
   tools_changed: '커넥터의 툴 목록이 바뀌었습니다. 툴 목록을 다시 불러오세요.',
   connection_test_failed: '연결 테스트에 실패했습니다.',
+  connector_disabled: '관리자가 사용 중지한 커넥터입니다.',
   internal_error: '요청을 처리하지 못했습니다.',
 } as const;
 
@@ -31,6 +32,7 @@ const statusOf: Record<ErrorCode, number> = {
   limit_exceeded: 409,
   tools_changed: 409,
   connection_test_failed: 422,
+  connector_disabled: 409,
   internal_error: 500,
 };
 

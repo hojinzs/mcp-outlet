@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.ts';
+import { setConnectorDisabled } from '../db/queries/connectors.ts';
 import { createLoggedInUser, testConfig } from '../testing/app.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
 import { FAKE_CLIENT_ID } from '../testing/fake-idp.ts';
@@ -147,6 +148,38 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 API (DB)', () => {
     });
     expect(changed.statusCode).toBe(409);
     expect(changed.json().error.code).toBe('tools_changed');
+  });
+
+  it('관리자가 사용 중지한 커넥터로는 새 엔드포인트를 만들 수 없다', async () => {
+    const { user, call } = await setup();
+    const created = await call('POST', '/api/endpoints', {
+      name: '첫 엔드포인트',
+      allowedTools: ['read_item'],
+      connector: connector(),
+    });
+    const connectorId = created.json().connector.id;
+    await setConnectorDisabled(db, connectorId, {
+      disabledAt: new Date(),
+      disabledBy: user.id,
+      disabledReason: '점검',
+    });
+
+    const denied = await call('POST', '/api/endpoints', {
+      name: '두 번째',
+      allowedTools: ['read_item'],
+      connectorId,
+    });
+    expect(denied.statusCode).toBe(409);
+    expect(denied.json().error.code).toBe('connector_disabled');
+    expect((await call('GET', '/api/endpoints')).json().endpoints).toHaveLength(1);
+
+    await setConnectorDisabled(db, connectorId, null);
+    const allowed = await call('POST', '/api/endpoints', {
+      name: '두 번째',
+      allowedTools: ['read_item'],
+      connectorId,
+    });
+    expect(allowed.statusCode).toBe(201);
   });
 
   it('다른 사용자의 URL과 잘못된 id는 같은 404', async () => {

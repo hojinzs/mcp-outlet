@@ -6,7 +6,8 @@ export type ServiceErrorCode =
   | 'invalid_request'
   | 'limit_exceeded'
   | 'tools_changed'
-  | 'connection_test_failed';
+  | 'connection_test_failed'
+  | 'connector_disabled';
 
 export class ServiceError extends Error {
   readonly code: ServiceErrorCode;
