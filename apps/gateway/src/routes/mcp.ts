@@ -19,10 +19,15 @@ export type McpRouteDeps = {
   policy: AccessPolicy;
   publicBaseUrl: string;
   audience: string;
+  // 관리 UI 로그인과 같은 scope (OIDC_SCOPES)
+  scopes: readonly string[];
 };
 
-// 클라이언트가 요청하는 scope. groups는 Authentik 등에서 profile에 실린다
-const SCOPES_SUPPORTED = ['openid', 'profile', 'email', 'offline_access'];
+// MCP 클라이언트가 IdP에 요청할 scope. 로그인 scope와 맞춰야 access token에 groups가 실린다.
+// offline_access는 클라이언트가 refresh token으로 재로그인 없이 이어 쓰게 하려고 더한다
+function scopesSupported(scopes: readonly string[]): string[] {
+  return [...new Set([...scopes, 'offline_access'])];
+}
 // 툴 인자에 파일 내용이 실리기도 해서 기본값(1MB)보다 넉넉히 둔다
 const BODY_LIMIT_BYTES = 10 * 1024 * 1024;
 
@@ -94,7 +99,7 @@ export async function registerMcpRoutes(app: FastifyInstance, deps: McpRouteDeps
       return {
         resource: endpointUrl(deps.publicBaseUrl, encodeURIComponent(id)),
         authorization_servers: [issuer],
-        scopes_supported: SCOPES_SUPPORTED,
+        scopes_supported: scopesSupported(deps.scopes),
         bearer_methods_supported: ['header'],
         resource_name: 'MCP Outlet',
       };

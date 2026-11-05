@@ -32,6 +32,7 @@ export type OidcSettings = {
   discoveryUrl: string;
   clientId: string;
   clientSecret?: string | undefined;
+  scopes: readonly string[];
 };
 
 export type OidcDeps = {
@@ -83,7 +84,7 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
       response_type: 'code',
       client_id: settings.clientId,
       redirect_uri: request.redirectUri,
-      scope: 'openid email profile',
+      scope: settings.scopes.join(' '),
       state: request.state,
       nonce: request.nonce,
       code_challenge: request.codeChallenge,

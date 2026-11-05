@@ -144,7 +144,8 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     expect(await res.json()).toEqual({
       resource: `https://outlet.test/c/${UNKNOWN_ID}/mcp`,
       authorization_servers: ['https://idp.test/app'],
-      scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
+      // OIDC_SCOPES 기본값 + offline_access
+      scopes_supported: ['openid', 'email', 'profile', 'offline_access'],
       bearer_methods_supported: ['header'],
       resource_name: 'MCP Outlet',
     });

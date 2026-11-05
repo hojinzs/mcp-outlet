@@ -71,6 +71,7 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
       discoveryUrl: config.OIDC_DISCOVERY_URL,
       clientId: config.OIDC_CLIENT_ID,
       clientSecret: config.OIDC_CLIENT_SECRET,
+      scopes: config.OIDC_SCOPES,
     },
     deps,
   );
@@ -125,6 +126,7 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
     },
     publicBaseUrl: config.PUBLIC_BASE_URL,
     audience: config.OIDC_AUDIENCE,
+    scopes: config.OIDC_SCOPES,
   });
 
   const serveAdmin = await registerAdminUi(app, config);

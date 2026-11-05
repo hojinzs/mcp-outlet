@@ -13,6 +13,7 @@ const settings = {
   discoveryUrl: FAKE_DISCOVERY_URL,
   clientId: FAKE_CLIENT_ID,
   clientSecret: FAKE_CLIENT_SECRET,
+  scopes: ['openid', 'email', 'groups'],
 };
 const logout = { postLogoutRedirectUri: 'https://o/admin/login' };
 const request = { redirectUri: 'https://o/cb', state: 's', nonce: 'n', codeChallenge: 'c' };
@@ -26,7 +27,7 @@ describe('OIDC client', () => {
     expect(idp.requests.filter((url) => url === FAKE_DISCOVERY_URL)).toHaveLength(1);
   });
 
-  it('authorize URL에 PKCE S256을 붙인다', async () => {
+  it('authorize URL에 PKCE S256과 설정한 scope를 붙인다', async () => {
     const idp = await createFakeIdp({ now });
     const client = createOidcClient(settings, { fetch: idp.fetch, now });
     const url = new URL(await client.authorizationUrl(request));
@@ -35,6 +36,7 @@ describe('OIDC client', () => {
       client_id: FAKE_CLIENT_ID,
       code_challenge: 'c',
       code_challenge_method: 'S256',
+      scope: 'openid email groups',
     });
     expect(url.searchParams.has('prompt')).toBe(false);
   });

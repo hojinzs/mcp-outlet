@@ -41,6 +41,12 @@ const configSchema = z
     OIDC_CLIENT_SECRET: z.string().optional(),
     // MCP 요청 토큰의 aud. 비우면 OIDC_CLIENT_ID (v1은 client 하나를 공유하므로 client_id 고정)
     OIDC_AUDIENCE: z.string().optional(),
+    // 관리 UI 로그인 scope. groups를 별도 scope로 주는 IdP는 여기에 더한다 (F-AUTH-06 이식성)
+    OIDC_SCOPES: z
+      .string()
+      .default('openid email profile')
+      .transform((value) => value.split(/\s+/).filter(Boolean))
+      .pipe(z.array(z.string()).refine((scopes) => scopes.includes('openid'), 'openid 포함 필요')),
     OIDC_GROUPS_CLAIM: z.string().default('groups'),
     // 비어 있으면 IdP 로그인에 성공한 모든 사용자를 허용
     OIDC_LOGIN_GROUPS: csv,

@@ -51,6 +51,14 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...validEnv, OIDC_AUDIENCE: 'https://x' }).OIDC_AUDIENCE).toBe('https://x');
   });
 
+  it('로그인 scope는 공백으로 나누고 openid를 요구한다', () => {
+    expect(loadConfig(validEnv).OIDC_SCOPES).toEqual(['openid', 'email', 'profile']);
+    expect(loadConfig({ ...validEnv, OIDC_SCOPES: ' openid  email\tgroups ' }).OIDC_SCOPES).toEqual(
+      ['openid', 'email', 'groups'],
+    );
+    expect(() => loadConfig({ ...validEnv, OIDC_SCOPES: 'email profile' })).toThrow(/OIDC_SCOPES/);
+  });
+
   it('보관 기간·타임아웃·프록시 기본값을 채운다', () => {
     const config = loadConfig(validEnv);
     expect(config.AUDIT_RETENTION_DAYS).toBe(90);
