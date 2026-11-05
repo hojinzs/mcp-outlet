@@ -49,7 +49,7 @@ function ConnectorRow({
         <Badge variant={status.variant}>{status.label}</Badge>
       </td>
       <td className="px-3 py-2 text-right">{connector.endpointCount}</td>
-      <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(connector.lastCalledAt)}</td>
+      <td className="px-3 py-2">{formatDateTime(connector.lastCalledAt)}</td>
       <td className="px-3 py-2">
         {disabled ? (
           <div className="flex max-w-56 flex-col gap-1">

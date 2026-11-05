@@ -76,7 +76,8 @@ function UserRow({
       </tr>
       {expanded && (
         <tr className="bg-muted/40">
-          <td colSpan={COLUMN_COUNT} className="px-3 py-3">
+          {/* max-w-0: 안쪽 커넥터 표가 바깥 표 폭을 늘리지 않고 자기 상자 안에서만 가로로 넘친다 */}
+          <td colSpan={COLUMN_COUNT} className="max-w-0 px-3 py-3">
             <UserConnectors userId={user.id} />
           </td>
         </tr>
