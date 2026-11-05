@@ -19,7 +19,8 @@ import {
 import { formatDateTime } from '../../lib/format.ts';
 
 // SCR-EP-03 커넥터 설정의 내장 서비스 열: 서비스 이름(바꿀 수 없음), 인증 방식, 연결된 계정·연결 시각.
-// OAuth는 다시 연결·다른 OAuth 앱으로 바꾸기, 서비스 계정은 키 파일 교체. 방식 전환도 같은 두 동작으로 한다
+// OAuth는 다시 연결·다른 계정으로 바꾸기(업스트림이 계정 선택 화면을 띄운다)와 다른 OAuth 앱으로 바꾸기,
+// 서비스 계정은 키 파일 교체. 방식 전환도 같은 두 동작으로 한다
 
 type Panel = 'oauth_client' | 'service_account_key' | null;
 
@@ -154,13 +155,13 @@ export function BuiltinSettings({
       input: { returnTo: endpointReturnTo(endpointId) },
     });
   }
-  const reconnectButton = (
+  const reconnectButton = (label: string) => (
     <Button
       variant={connector.status === 'reauth_required' ? 'default' : 'outline'}
       onClick={startReconnect}
       disabled={reconnect.start.isPending || reconnect.redirecting}
     >
-      {reconnect.start.isPending || reconnect.redirecting ? '이동하는 중' : '다시 연결'}
+      {reconnect.start.isPending || reconnect.redirecting ? '이동하는 중' : label}
     </Button>
   );
 
@@ -176,7 +177,7 @@ export function BuiltinSettings({
             {provider ? `${provider} ` : ''}계정 연결이 만료되었거나 취소되었습니다. 다시
             연결하세요.
           </p>
-          {isOAuth && oauthMethod && reconnectButton}
+          {isOAuth && oauthMethod && reconnectButton('다시 연결')}
         </div>
       )}
       {connectNotice && (
@@ -199,7 +200,8 @@ export function BuiltinSettings({
         <div className="flex flex-wrap gap-2">
           {isOAuth && oauthMethod && (
             <>
-              {connector.status !== 'reauth_required' && reconnectButton}
+              {connector.status !== 'reauth_required' &&
+                reconnectButton('다시 연결·다른 계정으로 바꾸기')}
               <Button variant="outline" onClick={() => setPanel('oauth_client')}>
                 다른 OAuth 앱으로 바꾸기
               </Button>
