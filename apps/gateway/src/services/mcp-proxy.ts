@@ -4,6 +4,7 @@ import { insertAuditLog } from '../db/queries/audit-logs.ts';
 import { type ConnectorRow, setConnectorHealth } from '../db/queries/connectors.ts';
 import { type EndpointRow, touchLastCalled } from '../db/queries/endpoints.ts';
 import { errorResponse, isRequest, type JsonRpcResponse, RPC_ERROR } from '../mcp/jsonrpc.ts';
+import { MAX_UPSTREAM_MESSAGE_BYTES, readBoundedText } from '../mcp/limits.ts';
 import { rewriteSse } from '../mcp/sse.ts';
 import {
   createResponseTap,
@@ -254,7 +255,10 @@ export function createMcpProxy(deps: McpProxyDeps) {
       return { status, headers, body: null };
     }
     if (contentType.startsWith('text/event-stream')) {
-      const body = onSettled(response.body.pipeThrough(rewriteSse(tap.rewrite)), tap.settle);
+      const body = onSettled(
+        response.body.pipeThrough(rewriteSse(tap.rewrite, MAX_UPSTREAM_MESSAGE_BYTES)),
+        tap.settle,
+      );
       return {
         status,
         headers: { ...headers, 'cache-control': 'no-cache', 'x-accel-buffering': 'no' },
@@ -262,7 +266,12 @@ export function createMcpProxy(deps: McpProxyDeps) {
       };
     }
     if (contentType.startsWith('application/json')) {
-      const text = await response.text();
+      const text = await readBoundedText(response.body, MAX_UPSTREAM_MESSAGE_BYTES);
+      if (text === null) {
+        tap.settle();
+        deps.log.warn({ upstream: 'response_too_large' }, 'upstream response rejected');
+        return failureReply(request, 'upstream_error', endpoint.id);
+      }
       let body = text;
       try {
         body = JSON.stringify(tap.rewrite(JSON.parse(text)));

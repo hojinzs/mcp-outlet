@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rewriteSse } from './sse.ts';
+import { rewriteSse, SseEventTooLarge } from './sse.ts';
 
 async function run(chunks: string[], rewrite: (message: unknown) => unknown = (m) => m) {
   const encoder = new TextEncoder();
@@ -11,7 +11,7 @@ async function run(chunks: string[], rewrite: (message: unknown) => unknown = (m
   });
   const outputs: string[] = [];
   const decoder = new TextDecoder();
-  for await (const chunk of source.pipeThrough(rewriteSse(rewrite))) {
+  for await (const chunk of source.pipeThrough(rewriteSse(rewrite, 1024))) {
     outputs.push(decoder.decode(chunk));
   }
   return outputs;
@@ -49,10 +49,15 @@ describe('rewriteSse', () => {
         push = (text) => controller.enqueue(encoder.encode(text));
       },
     });
-    const reader = source.pipeThrough(rewriteSse((m) => m)).getReader();
+    const reader = source.pipeThrough(rewriteSse((m) => m, 1024)).getReader();
     push('data: {"n":1}\n\n');
     const first = await reader.read();
     expect(new TextDecoder().decode(first.value)).toBe('data: {"n":1}\n\n');
     await reader.cancel();
+  });
+
+  it('끝나지 않은 이벤트가 상한을 넘으면 스트림을 오류로 끊는다', async () => {
+    const huge = `data: ${'x'.repeat(2000)}`;
+    await expect(run(['data: {"a":1}\n\n', huge])).rejects.toBeInstanceOf(SseEventTooLarge);
   });
 });
