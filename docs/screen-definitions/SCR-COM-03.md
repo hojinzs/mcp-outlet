@@ -37,4 +37,4 @@ IdP 로그인은 됐지만 이 화면을 쓸 권한이 없을 때, 이유와 다
 
 ## 결정 사항
 
-- **IdP 로그아웃 주소 (2026-11-04)**: OIDC discovery의 `end_session_endpoint`를 쓴다. discovery에 이 값이 없는 IdP면 "다른 계정으로 로그인" 버튼을 숨기고 IdP에서 직접 로그아웃하라고 안내한다.
+- **IdP 로그아웃 주소 (2026-11-04)**: OIDC discovery의 `end_session_endpoint`를 쓴다. discovery에 이 값이 없는 IdP면 "다른 계정으로 로그인" 버튼을 숨기고 IdP에서 직접 로그아웃하라고 안내한다. 지원 여부는 세션 없이 읽는 `GET /auth/options`의 `idpLogout`으로 받고, 레이아웃(SCR-COM-01) 계정 메뉴의 같은 항목도 숨긴다 (2026-11-05).
