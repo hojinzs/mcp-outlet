@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 import { AppLayout } from './layouts/app-layout.tsx';
 import { AdminRoute } from './pages/admin/admin-route.tsx';
+import { AuditPage } from './pages/admin/audit-page.tsx';
 import { UsersPage } from './pages/admin/users-page.tsx';
 import { EndpointConnectPage } from './pages/endpoint-connect-page.tsx';
 import { EndpointDetailPage } from './pages/endpoint-detail/endpoint-detail-page.tsx';
@@ -29,7 +30,10 @@ export const router = createBrowserRouter(
             {
               path: 'manage',
               element: <AdminRoute />,
-              children: [{ path: 'users', element: <UsersPage /> }],
+              children: [
+                { path: 'users', element: <UsersPage /> },
+                { path: 'audit', element: <AuditPage /> },
+              ],
             },
             { path: '*', element: <NotFoundPage /> },
           ],

@@ -26,6 +26,7 @@ type MenuItem = { to: string; label: string; matches: string[] };
 const menu: MenuItem[] = [{ to: '/', label: '내 엔드포인트', matches: ['/', '/endpoints'] }];
 const adminMenu: MenuItem[] = [
   { to: '/manage/users', label: '사용자', matches: ['/manage/users'] },
+  { to: '/manage/audit', label: '감사 로그', matches: ['/manage/audit'] },
 ];
 
 function isActive(pathname: string, matches: string[]): boolean {
