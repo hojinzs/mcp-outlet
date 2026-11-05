@@ -6,6 +6,8 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 
 const VERSION = 'v1';
 const IV_BYTES = 12;
+// 짧은 태그를 받으면 위조 난도가 내려간다. 암호화 때 만드는 길이(16바이트)만 받는다
+const TAG_BYTES = 16;
 
 type Key = { id: string; bytes: Buffer };
 
@@ -45,9 +47,13 @@ export function createSecretBox(keys: { current: string; previous?: string | und
     if (version !== VERSION || !key || !iv || !tag || body === undefined || rest.length > 0) {
       throw new SecretDecryptError();
     }
+    const authTag = Buffer.from(tag, 'base64url');
+    if (authTag.length !== TAG_BYTES) throw new SecretDecryptError();
     try {
-      const decipher = createDecipheriv('aes-256-gcm', key.bytes, Buffer.from(iv, 'base64url'));
-      decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+      const decipher = createDecipheriv('aes-256-gcm', key.bytes, Buffer.from(iv, 'base64url'), {
+        authTagLength: TAG_BYTES,
+      });
+      decipher.setAuthTag(authTag);
       const plain = Buffer.concat([
         decipher.update(Buffer.from(body, 'base64url')),
         decipher.final(),

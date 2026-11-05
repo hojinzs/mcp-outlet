@@ -43,4 +43,15 @@ describe('createSecretBox', () => {
       expect(() => box.decrypt(bad)).toThrow(SecretDecryptError);
     }
   });
+
+  it('16바이트가 아닌 인증 태그는 거부한다', () => {
+    const box = createSecretBox({ current: keyA });
+    const [version, keyId, iv, tag, body] = box.encrypt('value').split('.');
+    const short = Buffer.from(tag ?? '', 'base64url')
+      .subarray(0, 4)
+      .toString('base64url');
+    expect(() => box.decrypt([version, keyId, iv, short, body].join('.'))).toThrow(
+      SecretDecryptError,
+    );
+  });
 });
