@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createSecretBox } from '../crypto/secrets.ts';
 import { insertConnector } from '../db/queries/connectors.ts';
+import { replaceCiphertext } from '../db/queries/credentials.ts';
 import { credentials, users } from '../db/schema.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
 import { reencryptCredentials } from './key-rotation.ts';
@@ -61,6 +62,19 @@ describe.skipIf(!testDatabaseUrl)('키 회전 일괄 재암호화 (DB)', () => {
     expect(afterOnly.decrypt(byId.get(stale.id)?.ciphertext ?? '')).toBe('{"TOKEN":"a"}');
     expect(byId.get(stale.id)?.updatedAt).toEqual(stale.updatedAt);
     expect(byId.get(fresh.id)?.ciphertext).toBe(currentCiphertext);
+  });
+
+  it('읽은 뒤 다른 요청이 바꾼 암호문은 옛 값으로 덮어쓰지 않는다', async () => {
+    const box = createSecretBox({ current: newKey() });
+    const read = box.encrypt('{"TOKEN":"old"}');
+    const row = await newCredential(read);
+    const refreshed = box.encrypt('{"TOKEN":"refreshed"}');
+    await db.update(credentials).set({ ciphertext: refreshed }).where(eq(credentials.id, row.id));
+
+    const stale = box.encrypt('{"TOKEN":"old"}');
+    expect(await replaceCiphertext(db, row.id, { from: read, to: stale })).toBe(false);
+    const [after] = await db.select().from(credentials).where(eq(credentials.id, row.id));
+    expect(after?.ciphertext).toBe(refreshed);
   });
 
   it('어느 키로도 풀리지 않는 자격증명은 남겨 두고 실패로 센다', async () => {

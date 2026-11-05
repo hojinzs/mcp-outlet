@@ -28,7 +28,10 @@ export async function loadCredentials(
   const values = openCredentials(deps.secrets, row.ciphertext);
   // ENCRYPTION_KEY_PREVIOUS로 푼 값은 읽은 김에 현재 키로 다시 저장한다 (무중단 회전)
   if (deps.secrets.needsRotation(row.ciphertext)) {
-    await replaceCiphertext(deps.db, row.id, deps.secrets.encrypt(JSON.stringify(values)));
+    await replaceCiphertext(deps.db, row.id, {
+      from: row.ciphertext,
+      to: deps.secrets.encrypt(JSON.stringify(values)),
+    });
   }
   return values;
 }

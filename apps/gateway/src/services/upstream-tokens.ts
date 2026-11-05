@@ -79,7 +79,10 @@ export function createUpstreamTokens(deps: UpstreamTokensDeps) {
         if (fresh) return fresh;
         const token = await issueToken(deps.oauth, method, values);
         const next = withToken(values, token);
-        await replaceCiphertext(tx, row.id, deps.secrets.encrypt(JSON.stringify(next)));
+        await replaceCiphertext(tx, row.id, {
+          from: row.ciphertext,
+          to: deps.secrets.encrypt(JSON.stringify(next)),
+        });
         return token.accessToken;
       });
     } catch (error) {

@@ -50,20 +50,17 @@ export async function listCredentialCiphertexts(db: DbOrTx) {
   return db.select({ id: credentials.id, ciphertext: credentials.ciphertext }).from(credentials);
 }
 
-// 재암호화하는 동안 토큰 갱신이 같은 행을 바꾸지 못하게 잠근다
-export async function lockCredential(db: DbOrTx, id: string) {
-  const [row] = await db
-    .select({ id: credentials.id, ciphertext: credentials.ciphertext })
-    .from(credentials)
-    .where(eq(credentials.id, id))
-    .for('update');
-  return row;
-}
-
-// 키 회전 뒤 이전 키로 남은 암호문을 현재 키로 바꿔 쓴다. updatedAt(자격증명 변경 시각)은 그대로 둔다
-export async function replaceCiphertext(db: DbOrTx, id: string, ciphertext: string): Promise<void> {
-  await db
+// 읽은 암호문(from)이 그대로일 때만 바꿔 쓴다. 그 사이 토큰 갱신·자격증명 교체가 저장한 값을
+// 키 회전이 옛 값으로 되돌리지 않게 한다. updatedAt(자격증명 변경 시각)은 그대로 둔다
+export async function replaceCiphertext(
+  db: DbOrTx,
+  id: string,
+  change: { from: string; to: string },
+): Promise<boolean> {
+  const updated = await db
     .update(credentials)
-    .set({ ciphertext, updatedAt: credentials.updatedAt })
-    .where(eq(credentials.id, id));
+    .set({ ciphertext: change.to, updatedAt: credentials.updatedAt })
+    .where(and(eq(credentials.id, id), eq(credentials.ciphertext, change.from)))
+    .returning({ id: credentials.id });
+  return updated.length > 0;
 }
