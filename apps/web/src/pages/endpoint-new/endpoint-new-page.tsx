@@ -466,6 +466,8 @@ export function EndpointNewPage() {
           reconnecting={oauth.start.isPending || oauth.redirecting}
           reconnectError={oauth.start.error ? builtinErrorText(oauth.start.error) : null}
           onStartOver={startOver}
+          // 저장은 테스트를 통과해야 끝나지만 2단계에 쓸 툴 목록은 테스트 결과로 받는다
+          onSaved={() => resumeTest.mutate(resumeConnector.id)}
         />
       )}
 

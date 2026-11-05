@@ -82,7 +82,8 @@ function OAuthClientPanel({
   );
 }
 
-function ServiceAccountKeyPanel({
+// 이어하기 화면(SCR-EP-02)도 같은 패널로 키를 바꾼다
+export function ServiceAccountKeyPanel({
   connector,
   title,
   onSaved,

@@ -81,7 +81,8 @@ function failureText(error: Error): string {
   return error.message;
 }
 
-function RemoteForm({ connector, onSaved }: { connector: Connector; onSaved: () => void }) {
+// 이어하기 화면(SCR-EP-02)도 같은 폼으로 주소·토큰을 바꾼다
+export function RemoteForm({ connector, onSaved }: { connector: Connector; onSaved: () => void }) {
   const id = useId();
   const [draft, setDraft] = useState<Draft>(() => draftOf(connector));
   const [replacing, setReplacing] = useState(false);
