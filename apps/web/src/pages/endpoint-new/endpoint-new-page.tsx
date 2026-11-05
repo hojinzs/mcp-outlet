@@ -168,6 +168,9 @@ export function EndpointNewPage() {
 
   const connectorList = connectors.data ?? [];
   const serviceNames = serviceNamesByConnector(connectors.data, builtins.data);
+  const endpointIds = new Map(
+    (endpoints.data ?? []).map((endpoint) => [endpoint.connector.id, endpoint.id]),
+  );
   const currentMode: ConnectorMode = mode ?? (connectorList.length > 0 ? 'existing' : 'new');
   // OAuth 탭은 저장 전 테스트가 없다
   const formInput: NewConnectorInput | null =
@@ -452,6 +455,7 @@ export function EndpointNewPage() {
         <ConnectorStep
           connectors={connectorList}
           serviceNames={serviceNames}
+          endpointIds={endpointIds}
           mode={currentMode}
           onModeChange={setMode}
           newKind={newKind}

@@ -1,10 +1,11 @@
 import { CircleCheckIcon, CircleXIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import type { Connector } from '../../api/types.ts';
 import { Badge } from '../../components/ui/badge.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card, CardDescription, CardTitle } from '../../components/ui/card.tsx';
-import { isPickable } from '../../features/connectors/builtin.ts';
+import { isPickable, unpickableGuide } from '../../features/connectors/builtin.ts';
 import { type RemoteFormState, remoteFormProblem } from '../../features/connectors/remote-form.ts';
 import { connectorKindLabel } from '../../features/endpoints/connector-kind.ts';
 import { cn } from '../../lib/utils.ts';
@@ -52,11 +53,14 @@ function ChoiceButton({
 function ExistingConnectors({
   connectors,
   serviceNames,
+  endpointIds,
   picking,
   onPick,
 }: {
   connectors: readonly Connector[];
   serviceNames: ReadonlyMap<string, string>;
+  // 커넥터 id → 그 커넥터의 엔드포인트 하나. 고를 수 없는 커넥터를 고칠 상세로 보낸다
+  endpointIds: ReadonlyMap<string, string>;
   picking: string | null;
   onPick: (connector: Connector) => void;
 }) {
@@ -64,19 +68,38 @@ function ExistingConnectors({
     <ul className="divide-y overflow-hidden rounded-lg border bg-background">
       {connectors.map((connector) => {
         const disabled = connector.disabledAt !== null;
+        const guide = unpickableGuide(connector, endpointIds.get(connector.id));
         return (
-          <li key={connector.id} className="flex items-center gap-3 px-4 py-3">
+          <li
+            key={connector.id}
+            className={cn('flex items-center gap-3 px-4 py-3', guide && 'bg-muted/40')}
+          >
             <div className="min-w-0 flex-1">
-              <div className="font-medium">{connector.name}</div>
+              <div className={cn('font-medium', guide && 'text-muted-foreground')}>
+                {connector.name}
+              </div>
               <div className="text-xs text-muted-foreground">
                 {connectorKindLabel(connector.runtime, serviceNames.get(connector.id))} · 툴{' '}
                 {connector.toolCount}개
               </div>
+              {guide && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {guide.reason}
+                  {guide.link && (
+                    <>
+                      {' · '}
+                      <Link to={guide.link.to} className="text-foreground underline">
+                        {guide.link.label}
+                      </Link>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
             {disabled ? (
               <Badge variant="destructive">사용 중지됨</Badge>
             ) : connector.status === 'pending' ? (
-              // 계정 연결 전에 먼저 저장한 커넥터. 연결 테스트 전이라 고를 수 없다
+              // 계정 연결 전에 먼저 저장한 커넥터
               <Badge variant="secondary">연결 중</Badge>
             ) : connector.status === 'error' ? (
               <Badge variant="destructive">커넥터 오류</Badge>
@@ -141,6 +164,7 @@ export function TestBar({
 export function ConnectorStep({
   connectors,
   serviceNames,
+  endpointIds,
   mode,
   onModeChange,
   newKind,
@@ -157,6 +181,7 @@ export function ConnectorStep({
 }: {
   connectors: readonly Connector[];
   serviceNames: ReadonlyMap<string, string>;
+  endpointIds: ReadonlyMap<string, string>;
   mode: ConnectorMode;
   onModeChange: (mode: ConnectorMode) => void;
   newKind: NewConnectorKind;
@@ -192,6 +217,7 @@ export function ConnectorStep({
         <ExistingConnectors
           connectors={connectors}
           serviceNames={serviceNames}
+          endpointIds={endpointIds}
           picking={picking}
           onPick={onPick}
         />

@@ -12,6 +12,7 @@ import {
   isPickable,
   newEndpointReturnTo,
   oauthMethodOf,
+  unpickableGuide,
   withoutConnectOutcome,
 } from './builtin.ts';
 
@@ -121,11 +122,32 @@ describe('내장 서비스 목록', () => {
     expect(builtinGuide('unknown').serviceAccount).not.toContain('GA4');
   });
 
-  it('연결 중·사용 중지된 커넥터는 고를 수 없다', () => {
+  it('정상 커넥터만 고를 수 있다', () => {
     const connector = { disabledAt: null, status: 'ok' } as Connector;
     expect(isPickable(connector)).toBe(true);
     expect(isPickable({ ...connector, status: 'pending' })).toBe(false);
+    expect(isPickable({ ...connector, status: 'error' })).toBe(false);
+    expect(isPickable({ ...connector, status: 'reauth_required' })).toBe(false);
     expect(isPickable({ ...connector, disabledAt: '2026-11-01T00:00:00Z' })).toBe(false);
+  });
+
+  it('고를 수 없는 커넥터는 사유와 고칠 곳을 준다', () => {
+    const connector = { disabledAt: null, status: 'ok' } as Connector;
+    expect(unpickableGuide(connector, 'e1')).toBeNull();
+    expect(unpickableGuide({ ...connector, status: 'error' }, 'e1')?.link).toEqual({
+      to: '/endpoints/e1',
+      label: '상세에서 다시 테스트',
+    });
+    expect(unpickableGuide({ ...connector, status: 'reauth_required' }, 'e1')?.link).toEqual({
+      to: '/endpoints/e1',
+      label: '상세에서 다시 연결',
+    });
+    // 엔드포인트가 없으면 목록의 "엔드포인트 없는 커넥터"로
+    expect(unpickableGuide({ ...connector, status: 'pending' }, undefined)?.link?.to).toBe('/');
+    // 관리자 사용 중지는 사용자가 고칠 수 없다
+    expect(
+      unpickableGuide({ ...connector, disabledAt: '2026-11-01T00:00:00Z' }, 'e1')?.link,
+    ).toBeNull();
   });
 });
 

@@ -117,9 +117,36 @@ export function supportsServiceAccount(builtin: Builtin | undefined): boolean {
   return builtin?.authMethods.some((method) => method.type === 'service_account') ?? false;
 }
 
-// "연결 중"(계정 연결 전) 커넥터는 연결 테스트를 거쳐야 쓸 수 있다
+// 정상(ok) 커넥터만 고를 수 있다. 연결 중·오류·재연결 필요는 상세에서 고친 뒤 쓴다 (SCR-EP-02 결정 사항)
 export function isPickable(connector: Connector): boolean {
-  return connector.disabledAt === null && connector.status !== 'pending';
+  return connector.disabledAt === null && connector.status === 'ok';
+}
+
+export type UnpickableGuide = { reason: string; link: { to: string; label: string } | null };
+
+const unpickableReasons: Record<Exclude<Connector['status'], 'ok'>, string> = {
+  pending: '계정 연결을 마치지 않았습니다',
+  error: '마지막 연결 테스트나 호출에서 인증·연결에 실패했습니다',
+  reauth_required: '계정 연결이 만료되었거나 취소되었습니다',
+};
+
+// 고를 수 없는 커넥터의 사유와 고칠 곳. 엔드포인트가 있으면 그 상세(재테스트·재연결)로,
+// 없으면 엔드포인트 목록의 "엔드포인트 없는 커넥터"로 보낸다 (SCR-EP-02, SCR-EP-01)
+export function unpickableGuide(
+  connector: Connector,
+  endpointId: string | undefined,
+): UnpickableGuide | null {
+  if (connector.disabledAt !== null) {
+    return { reason: '관리자가 사용 중지한 커넥터입니다', link: null };
+  }
+  if (connector.status === 'ok') return null;
+  const reason = unpickableReasons[connector.status];
+  if (endpointId === undefined) {
+    return { reason, link: { to: '/', label: '엔드포인트 없는 커넥터에서 정리하기' } };
+  }
+  const label =
+    connector.status === 'reauth_required' ? '상세에서 다시 연결' : '상세에서 다시 테스트';
+  return { reason, link: { to: `/endpoints/${encodeURIComponent(endpointId)}`, label } };
 }
 
 // 서비스별 권한·API 안내. /api/builtins가 주지 않아 화면이 key로 고른다
