@@ -8,7 +8,9 @@ import {
 } from './jsonrpc.ts';
 
 // 엔드포인트 허용목록 적용 (F-EP-02): 목록 밖 tools/call은 업스트림에 보내지 않고,
-// tools/list 응답에서는 목록 밖 툴을 뺀다. 런타임과 상관없이 메시지 단위로 동작한다
+// tools/list 응답에서는 목록 밖 툴을 뺀다. 런타임과 상관없이 메시지 단위로 동작한다.
+// tools/list 응답은 요청 id가 아니라 결과 모양(result.tools 배열)으로 알아본다. GET 스트림 재개
+// (Last-Event-ID)로 다시 오는 응답은 이 요청에서 보낸 id와 짝지을 수 없어서다
 
 export type ToolCallOutcome = 'ok' | 'error';
 
@@ -21,8 +23,7 @@ export type InboundPlan =
     }
   | {
       kind: 'forward';
-      // tools/list 요청 id와 tools/call 요청 id → 툴 이름
-      toolLists: Set<string>;
+      // tools/call 요청 id → 툴 이름
       toolCalls: Map<string, string>;
     };
 
@@ -70,17 +71,15 @@ export function planInbound(body: unknown, allowedTools: readonly string[]): Inb
     return { kind: 'deny', deniedTools, response: responses.length > 0 ? response : null };
   }
 
-  const toolLists = new Set<string>();
   const toolCalls = new Map<string, string>();
   for (const message of messages.filter(isRequest)) {
-    if (message.method === 'tools/list') toolLists.add(idKey(message.id));
     if (message.method === 'tools/call') toolCalls.set(idKey(message.id), toolNameOf(message));
   }
-  return { kind: 'forward', toolLists, toolCalls };
+  return { kind: 'forward', toolCalls };
 }
 
 function filterToolsList(result: unknown, allowed: ReadonlySet<string>): unknown {
-  const tools = (result as { tools?: unknown } | undefined)?.tools;
+  const tools = (result as { tools?: unknown } | null | undefined)?.tools;
   if (!Array.isArray(tools)) return result;
   return {
     ...(result as object),
@@ -108,10 +107,8 @@ export function createResponseTap(
         message.error !== undefined || (message.result as { isError?: unknown })?.isError === true;
       onToolCall(toolName, isError ? 'error' : 'ok');
     }
-    if (plan.toolLists.has(key) && message.result !== undefined) {
-      return { ...message, result: filterToolsList(message.result, allowed) };
-    }
-    return message;
+    if (message.result === undefined) return message;
+    return { ...message, result: filterToolsList(message.result, allowed) };
   }
 
   return {

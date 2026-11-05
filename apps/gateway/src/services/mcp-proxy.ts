@@ -181,11 +181,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
       background(setConnectorHealth(deps.db, connector.id, status), 'connector_health');
     }
 
-    let plan: ReturnType<typeof planInbound> = {
-      kind: 'forward',
-      toolLists: new Set(),
-      toolCalls: new Map(),
-    };
+    let plan: ReturnType<typeof planInbound> = { kind: 'forward', toolCalls: new Map() };
     if (request.method === 'POST') {
       if (request.body?.json === undefined) {
         return jsonReply(400, errorResponse(null, RPC_ERROR.parseError, 'JSON 본문이 아닙니다.'));

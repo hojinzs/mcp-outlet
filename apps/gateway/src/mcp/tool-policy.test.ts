@@ -11,7 +11,7 @@ const call = (id: number | string, name: string) => ({
 describe('planInbound', () => {
   const allowed = ['read_item'];
 
-  it('허용된 호출과 tools/list는 id를 기억하고 보낸다', () => {
+  it('허용된 호출은 id를 기억하고 tools/list와 함께 보낸다', () => {
     const plan = planInbound(
       [call(1, 'read_item'), { jsonrpc: '2.0', id: '1', method: 'tools/list' }],
       allowed,
@@ -19,7 +19,6 @@ describe('planInbound', () => {
     expect(plan.kind).toBe('forward');
     if (plan.kind !== 'forward') return;
     expect([...plan.toolCalls]).toEqual([['1', 'read_item']]);
-    expect([...plan.toolLists]).toEqual(['"1"']);
   });
 
   it('목록 밖 tools/call은 MCP 오류로 거부한다', () => {
@@ -89,6 +88,22 @@ describe('createResponseTap', () => {
     expect(outcomes).toEqual([
       ['read_item', 'error'],
       ['read_item', 'error'],
+    ]);
+  });
+
+  it('이 요청에서 보내지 않은 tools/list 응답(GET 스트림 재개)도 허용목록으로 거른다', () => {
+    const tap = createResponseTap(
+      { kind: 'forward', toolCalls: new Map() },
+      ['read_item'],
+      () => {},
+    );
+    const replayed = tap.rewrite([
+      { jsonrpc: '2.0', id: 'earlier', result: { tools: [{ name: 'delete_item' }] } },
+      { jsonrpc: '2.0', id: 'other', result: { content: [] } },
+    ]);
+    expect(replayed).toEqual([
+      { jsonrpc: '2.0', id: 'earlier', result: { tools: [] } },
+      { jsonrpc: '2.0', id: 'other', result: { content: [] } },
     ]);
   });
 
