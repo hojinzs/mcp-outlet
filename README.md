@@ -77,6 +77,7 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 - `/auth/login?returnTo=/admin/…` → IdP(authorization code + PKCE S256) → `/auth/callback` → `returnTo`. `returnTo`는 정규화한 뒤에도 `/admin/` 아래인 경로만 받는다(`/admin/..//host` 같은 값은 `/admin/`으로).
 - 세션은 `sessions` 테이블에 SHA-256으로만 저장하고, 쿠키 `outlet_session`(HttpOnly, SameSite=Lax, `PUBLIC_BASE_URL`이 https면 Secure)에 무작위 토큰을 둔다. 수명은 `SESSION_TTL_HOURS`(기본 12시간)이고 로그인 시점부터 센다. 행을 지우면 바로 로그아웃된다.
 - 허용 그룹 밖이면 세션 없이 `/admin/forbidden?reason=not_member`로 보내고, 이미 있던 사용자면 role을 user로 내리고 남은 세션을 모두 지운다. 로그인 실패는 `/admin/login?error=access_denied|state_mismatch|idp_error`로 보낸다.
+- `GET /auth/options`는 세션 없이 `{ idpLogout }`(discovery에 `end_session_endpoint`가 있는지)를 준다. 없으면 화면이 "다른 계정으로 로그인"을 숨기고 IdP에서 직접 로그아웃하라고 안내한다.
 - `POST /auth/logout`은 gateway 세션만 지우고 `{ redirectTo }`를 돌려준다. `?idp=true`("다른 계정으로 로그인")면 discovery의 `end_session_endpoint`에 `client_id`·`id_token_hint`·`post_logout_redirect_uri={PUBLIC_BASE_URL}/admin/login`을 붙인 주소를 준다. id_token은 DB가 아니라 `/auth/logout` 경로 전용 HttpOnly 쿠키 `outlet_id_token`에 둔다(허용 그룹 밖이라 세션이 없을 때도 쓰기 위해서다). 쿠키가 없으면 돌아올 주소 없이 IdP 로그아웃만 한다.
 - `prompt` 파라미터는 IdP에 넘기지 않는다. Authentik에 `prompt=login`을 넘기면 IdP 세션이 없는 브라우저에서 로그인 흐름이 처음으로 돌아가는 루프가 생겨 뺐다. 계정을 바꿀 때는 위의 `?idp=true` 로그아웃을 쓴다.
 - Authentik 프로바이더 설정: Redirect URI에 `{PUBLIC_BASE_URL}/admin/login`을 **logout** 유형(strict)으로 등록하고, Invalidation flow는 Authentik 세션까지 끝내는 `default-invalidation-flow`로 둔다. `default-provider-invalidation-flow`는 앱 세션만 끝내므로 같은 계정으로 다시 로그인된다.
@@ -85,14 +86,14 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 
 `/c/{endpointId}/mcp`는 Streamable HTTP(POST·GET·DELETE)를 원격 커넥터로 중계하거나 내장 커넥터가 직접 처리한다. 내장 커넥터는 요청마다 상태 없는 MCP 서버로 답하므로 POST만 받고 GET·DELETE는 405다.
 
-- **인증**: `Authorization: Bearer <IdP access token>`. 서명(JWKS)·iss·aud(`OIDC_AUDIENCE`, 기본 client_id)·exp를 확인한다. 토큰이 없거나 틀리면 엔드포인트가 있든 없든 401과 `WWW-Authenticate: Bearer resource_metadata="{PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/c/{id}/mcp"`를 준다. 메타데이터(RFC 9728)는 `resource`·`authorization_servers`(IdP issuer)·`scopes_supported`를 담는다.
-- **인가**: 요청마다 토큰의 groups로 로그인 허용 그룹을 다시 확인하고(아니면 403) 사용자의 email·groups를 갱신한다. 그룹에서 빠졌으면 role을 user로 내리고 관리 UI 세션을 모두 지운다. sub가 엔드포인트 소유자가 아니면 없는 엔드포인트와 같은 404, 엔드포인트 비활성·커넥터 사용 중지는 403이다.
-- **허용목록**: `tools/list` 응답에서 허용 밖 툴을 빼고, 허용 밖 `tools/call`은 업스트림에 보내지 않고 JSON-RPC 오류(-32602)로 답한다. 배치에 허용 밖 호출이 섞이면 배치 전체를 거부한다.
+- **인증**: `Authorization: Bearer <IdP access token>`. 서명(JWKS)·iss·aud(`OIDC_AUDIENCE`, 기본 client_id)·exp와 `scope`(또는 `scp`) 클레임을 확인한다. scope가 없는 id_token은 Bearer로 받지 않는다. 토큰이 없거나 틀리면 엔드포인트가 있든 없든 401과 `WWW-Authenticate: Bearer resource_metadata="{PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/c/{id}/mcp"`를 준다. 메타데이터(RFC 9728)는 `resource`·`authorization_servers`(IdP issuer)·`scopes_supported`를 담는다.
+- **인가**: 요청마다 토큰의 groups로 로그인 허용 그룹을 다시 확인하고(아니면 403) 사용자의 email·groups를 갱신한다. 그룹에서 빠졌으면 role을 user로 내리고 관리 UI 세션을 모두 지운다. 그룹 탈퇴는 MCP 호출에는 이미 발급된 access token 수명(기본 30분) 안에 반영되고, 관리 UI 세션은 그 사람이 다시 로그인하거나 MCP 요청으로 거부되기 전까지 `SESSION_TTL_HOURS`까지 남는다(관리자 그룹에서만 빠진 경우의 admin role도 같다). 즉시 끊으려면 DB `sessions`에서 그 사용자 행을 지운다. sub가 엔드포인트 소유자가 아니면 없는 엔드포인트와 같은 404, 엔드포인트 비활성·커넥터 사용 중지는 403이다.
+- **허용목록**: `tools/list` 응답에서 허용 밖 툴을 빼고, 허용 밖 `tools/call`은 업스트림에 보내지 않고 JSON-RPC 오류(-32602)로 답한다. 배치에 허용 밖 호출이 섞이면 배치 전체를 거부한다. 업스트림에는 원문이 아니라 판정에 쓴 파싱 결과를 다시 직렬화해 보낸다(중복 키로 다른 툴을 부르는 우회 방지).
 - **중계**: 요청 헤더는 `accept`·`content-type`·`mcp-session-id`·`mcp-protocol-version`·`last-event-id`만 넘기고, Authorization은 커넥터 자격증명(헤더 이름·접두어 설정)으로 바꾼다. SSE는 이벤트 단위로 바로 넘기고, 클라이언트가 끊으면 업스트림 요청도 끊는다. 업스트림 메시지 하나(JSON 본문, 끝나지 않은 SSE 이벤트)는 8MiB까지만 받고 넘으면 업스트림을 끊는다. JSON 본문은 다 받을 때까지 `UPSTREAM_TIMEOUT_MS`를 넘겨도 끊는다(SSE 스트림은 제외). `tools/list` 결과는 요청 id가 아니라 결과 모양으로 알아보고 걸러 GET 스트림 재개(`Last-Event-ID`)로 다시 온 목록에도 허용목록을 적용한다. 업스트림 실패는 원문 없이 JSON-RPC 오류(-32000)와 관리 화면 링크로 정리한다.
 - **감사 로그**: `tools/call`마다 `audit_logs`에 사용자·엔드포인트·커넥터·툴 이름·결과(ok·error·denied)·소요시간만 남긴다. 허용목록 밖 호출과 사용 중지된 커넥터로 온 호출은 denied다. `lastCalledAt`은 최대 1분에 한 번 갱신한다.
 - **보관**: 감사 로그는 `AUDIT_RETENTION_DAYS`(기본 90일), 작업 기록(`activity_logs`)은 `ACTIVITY_RETENTION_DAYS`(기본 365일)가 지나면 gateway가 기동할 때와 하루 한 번 지운다. 0이면 지우지 않는다. 같은 작업이 만료된 관리 UI 세션과 24시간 넘게 엔드포인트 없이 "연결 중"(`pending`)으로 남은 OAuth 커넥터도 지운다(`services/retention.ts`). 로그에는 지운 건수만 남긴다.
 - **사용자 원격 URL**(F-CON-06): https만 받고, DNS 해석 결과가 하나라도 사설·loopback·link-local·CGNAT·메타데이터·ULA 등이면 거부하며, 검사한 주소로만 연결하고 redirect는 따르지 않는다. `UPSTREAM_ALLOW_CIDRS` 대역만 예외이고 그 대역은 http도 받는다. 업스트림 응답 헤더까지 `UPSTREAM_TIMEOUT_MS`를 기다린다.
-- 브라우저 클라이언트(MCP Inspector)를 위해 `/c/*`와 `/.well-known/*`에는 `Access-Control-Allow-Origin: *`를 준다. Authentik의 토큰 엔드포인트는 CORS를 주지 않아 Inspector의 브라우저 안 OAuth는 토큰 교환에서 막힌다. Inspector로 볼 때는 다른 방법으로 받은 access token을 Authorization 헤더에 넣는다.
+- 브라우저 클라이언트(MCP Inspector)를 위해 `/c/*`와 `/.well-known/*`에는 `Access-Control-Allow-Origin: *`를 준다. MCP Inspector v2(2.14에서 확인)는 discovery와 토큰 교환을 Node 백엔드가 하므로 Authentik 토큰 엔드포인트에 CORS가 없어도 OAuth가 된다. OAuth Settings에 Client ID·Secret과 scope를 넣고 Redirect URI는 위 Inspector 항목에 맞는 `http://localhost:6274/oauth/callback`을 쓴다.
 
 ### 관리 API
 
@@ -138,10 +139,10 @@ Redirect URI는 아래를 등록한다. 앱에는 `MCP Outlet Users`·`MCP Outle
 
 ### 내장 커넥터 (Google Analytics 4 + Search Console)
 
-`packages/builtin-connectors`의 `BuiltinConnector`(툴 정의·`checkAccess`·`callTool`, 지원 인증 방식)를 gateway의 builtin 런타임이 MCP 서버로 감싼다. GA4(속성 목록·메타데이터·runReport·realtime)와 Search Console(사이트·검색 실적·URL 검사·사이트맵) 툴은 모두 조회 전용(`readOnlyHint`)이고, Google API를 fetch로 직접 부른다. 업스트림 오류는 분류 문구로만 돌려주고, 400(인자 오류)일 때만 Google의 `error.message`(300자까지)를 붙여 모델이 인자를 고치게 한다.
+`packages/builtin-connectors`의 `BuiltinConnector`(툴 정의·`checkAccess`·`callTool`, 지원 인증 방식)를 gateway의 builtin 런타임이 MCP 서버로 감싼다. GA4(속성 목록·메타데이터·runReport·realtime)와 Search Console(사이트·검색 실적·URL 검사·사이트맵) 툴은 모두 조회 전용(`readOnlyHint`)이고, Google API를 fetch로 직접 부른다. 업스트림 오류는 분류 문구로만 돌려주고, 400(인자 오류)일 때만 Google의 `error.message`(300자까지)를 붙여 모델이 인자를 고치게 한다(자격증명은 헤더로만 보내므로 이 메시지에 섞이지 않는다). 툴 호출에서 401·403이 오면 툴 결과 대신 인증 실패 MCP 오류로 답하고 커넥터를 오류(`error`)로 바꾸며, 다음 호출이 성공하면 정상으로 돌린다.
 
 - **서비스 계정 JSON**: 키에서 `client_email`·`private_key`만 암호화 저장하고(`token_uri`는 무시), RS256 assertion(RFC 7523)으로 access token을 받는다. 화면에는 `client_email`만 보인다. 이 이메일을 GA4 속성(속성 액세스 관리, 뷰어)과 Search Console 사이트(사용자 및 권한)에 추가해야 데이터가 보인다.
-- **업스트림 OAuth2**: 사용자가 자기 Google OAuth 앱(웹 애플리케이션)의 Client ID·Secret을 넣고 "Google로 연결"을 누르면 커넥터를 `pending`으로 저장한 뒤 동의 화면(PKCE, `access_type=offline`, `prompt=consent`)으로 보낸다. 리디렉션 URI는 `{PUBLIC_BASE_URL}/auth/upstream/callback`이다. 콜백은 세션 사용자가 커넥터 소유자일 때만 refresh token을 암호화 저장하고 `returnTo`에 `connected=1`(실패면 `connect_error=cancelled|failed`)을 붙여 돌려보낸다. 24시간 안에 엔드포인트를 만들지 않은 `pending` 커넥터는 다음 생성 때와 일일 보관 정리 때 지운다.
+- **업스트림 OAuth2**: 사용자가 자기 Google OAuth 앱(웹 애플리케이션)의 Client ID·Secret을 넣고 "Google로 연결"을 누르면 커넥터를 `pending`으로 저장한 뒤 동의 화면(PKCE, `access_type=offline`, `prompt=consent select_account`. 계정 선택 화면을 띄워 다른 계정으로 바꿀 수 있다)으로 보낸다. 리디렉션 URI는 `{PUBLIC_BASE_URL}/auth/upstream/callback`이다. 콜백은 세션 사용자가 커넥터 소유자일 때만 refresh token을 암호화 저장하고 `returnTo`에 `connected=1`(실패면 `connect_error=cancelled|failed`, 재연결 뒤 연결 테스트 실패면 `connect_error=test_failed`)을 붙여 돌려보낸다. 첫 연결 테스트에 실패해도 `pending`으로 남는다. 24시간 안에 엔드포인트를 만들지 않은 `pending` 커넥터는 다음 생성 때와 일일 보관 정리 때 지운다.
 - **토큰 갱신**: access token은 자격증명에 함께 암호화해 두고 만료 1분 전부터 새로 받는다. 같은 프로세스는 요청을 하나로 합치고, 인스턴스 사이는 자격증명 행 잠금(`FOR UPDATE`)으로 한 번만 갱신한다. 갱신이 `invalid_grant`·`invalid_client`로 거부되면 커넥터를 `reauth_required`로 바꾸고, 툴 호출 결과에 재연결 안내와 엔드포인트 관리 화면 링크를 넣는다.
 - **Google Cloud 준비**: Analytics Data API·Analytics Admin API·Search Console API를 켠다. OAuth는 동의 화면을 Workspace **내부(Internal)** 앱으로 만들거나 게시한다. 외부(External) 앱을 테스트 상태로 두면 refresh token이 7일 뒤 만료된다.
 - 외부 API 주소는 커넥터 코드에만 있으므로 사용자 URL용 SSRF 검사를 거치지 않고, 업스트림 호출 상한은 `UPSTREAM_TIMEOUT_MS`를 같이 쓴다.
