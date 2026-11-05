@@ -84,12 +84,13 @@ describe.skipIf(!testDatabaseUrl)('관리 UI 로그인 (DB)', () => {
   it('로그인 시작은 PKCE S256과 서명한 임시 쿠키를 쓴다', async () => {
     const s = await setup();
     const { res, location, loginCookie } = await startLogin(s, '?prompt=login');
+    // prompt는 IdP에 넘기지 않는다. "다른 계정으로 로그인"은 end_session으로 한다
     expect(res.statusCode).toBe(302);
     const params = new URL(location).searchParams;
     expect(location.startsWith(`${FAKE_ISSUER}/authorize?`)).toBe(true);
     expect(params.get('code_challenge_method')).toBe('S256');
     expect(params.get('redirect_uri')).toBe('https://outlet.test/auth/callback');
-    expect(params.get('prompt')).toBe('login');
+    expect(params.has('prompt')).toBe(false);
     expect(loginCookie).toMatchObject({
       httpOnly: true,
       sameSite: 'Lax',

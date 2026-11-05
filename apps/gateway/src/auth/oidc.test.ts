@@ -26,17 +26,17 @@ describe('OIDC client', () => {
     expect(idp.requests.filter((url) => url === FAKE_DISCOVERY_URL)).toHaveLength(1);
   });
 
-  it('authorize URL에 PKCE S256과 prompt를 붙인다', async () => {
+  it('authorize URL에 PKCE S256을 붙인다', async () => {
     const idp = await createFakeIdp({ now });
     const client = createOidcClient(settings, { fetch: idp.fetch, now });
-    const url = new URL(await client.authorizationUrl({ ...request, prompt: 'login' }));
+    const url = new URL(await client.authorizationUrl(request));
     expect(Object.fromEntries(url.searchParams)).toMatchObject({
       response_type: 'code',
       client_id: FAKE_CLIENT_ID,
       code_challenge: 'c',
       code_challenge_method: 'S256',
-      prompt: 'login',
     });
+    expect(url.searchParams.has('prompt')).toBe(false);
   });
 
   it('PKCE verifier와 client secret으로 코드를 교환한다', async () => {

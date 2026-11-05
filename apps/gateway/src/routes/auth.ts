@@ -25,10 +25,10 @@ export type AuthRouteDeps = { config: Config; db: Db; oidc: OidcClient; now: () 
 // SCR-COM-02의 error 값
 type LoginErrorCode = 'access_denied' | 'state_mismatch' | 'idp_error';
 
+// prompt는 받지 않는다. Authentik에 prompt=login을 넘기면 IdP 세션이 없는 브라우저에서 로그인 흐름이
+// 처음으로 되돌아가는 루프가 생겼다. "다른 계정으로 로그인"은 end_session으로 한다 (POST /auth/logout?idp=true)
 const loginQuery = z.object({
   returnTo: z.string().optional(),
-  // "다른 계정으로 로그인"처럼 IdP에 계정 선택을 다시 요구할 때 쓴다
-  prompt: z.enum(['login', 'select_account']).optional(),
 });
 
 const callbackQuery = z.object({
@@ -59,7 +59,6 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
         state: loginState.state,
         nonce: loginState.nonce,
         codeChallenge: codeChallengeOf(loginState),
-        prompt: query.prompt,
       });
     } catch (error) {
       if (!(error instanceof OidcError)) throw error;

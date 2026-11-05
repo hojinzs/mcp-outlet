@@ -44,7 +44,6 @@ export type AuthorizationRequest = {
   state: string;
   nonce: string;
   codeChallenge: string;
-  prompt?: string | undefined;
 };
 
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
@@ -89,7 +88,6 @@ export function createOidcClient(settings: OidcSettings, deps: OidcDeps) {
       nonce: request.nonce,
       code_challenge: request.codeChallenge,
       code_challenge_method: 'S256',
-      ...(request.prompt ? { prompt: request.prompt } : {}),
     }).toString();
     return url.toString();
   }
