@@ -2,18 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { RefreshCwIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { callsQuery } from '../../api/queries.ts';
-import type { CallResult, EndpointDetail } from '../../api/types.ts';
-import { Badge, type BadgeVariant } from '../../components/ui/badge.tsx';
+import type { EndpointDetail } from '../../api/types.ts';
+import { CallResultBadge } from '../../components/call-result-badge.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card, CardTitle } from '../../components/ui/card.tsx';
 import { canAllowFromCall } from '../../features/endpoints/detail.ts';
 import { formatCallTime } from '../../lib/format.ts';
-
-const resultView: Record<CallResult, { label: string; variant: BadgeVariant }> = {
-  ok: { label: '성공', variant: 'success' },
-  error: { label: '오류', variant: 'destructive' },
-  denied: { label: '거부', variant: 'warning' },
-};
 
 // SCR-EP-03 최근 호출 20건. 감사 로그에서 본인 엔드포인트 것만
 export function RecentCalls({
@@ -76,9 +70,7 @@ export function RecentCalls({
                     <code className="font-mono">{call.toolName}</code>
                   </td>
                   <td className="py-2 pr-4">
-                    <Badge variant={resultView[call.result].variant}>
-                      {resultView[call.result].label}
-                    </Badge>
+                    <CallResultBadge result={call.result} />
                   </td>
                   <td className="py-2 pr-4 text-right whitespace-nowrap">{call.durationMs} ms</td>
                   <td className="py-2 text-right">
