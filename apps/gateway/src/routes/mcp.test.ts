@@ -181,6 +181,26 @@ describe.skipIf(!testDatabaseUrl)('MCP 프록시 /c/{id}/mcp (DB)', () => {
     expect((await post(url, token, initialize)).status).toBe(403);
   });
 
+  it('사용 중지된 커넥터로 온 툴 호출은 403으로 막고 감사 로그에 거부로 남긴다', async () => {
+    const { url, token, endpoint } = await newEndpoint();
+    await db
+      .update(connectors)
+      .set({ disabledAt: new Date(), disabledReason: 'abuse' })
+      .where(eq(connectors.id, endpoint.connector.id));
+    const res = await post(url, token, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'read_item', arguments: { id: '1' } },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain('사용 중지');
+    await vi.waitFor(async () =>
+      expect(await auditRows(endpoint.id)).toEqual([{ toolName: 'read_item', result: 'denied' }]),
+    );
+  });
+
   it('허용한 툴만 보이고, 목록 밖 호출은 MCP 오류로 거부하며 감사 로그를 남긴다', async () => {
     const { url, token, endpoint } = await newEndpoint();
     const { client, transport } = await connect(url, token);

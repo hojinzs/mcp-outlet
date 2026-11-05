@@ -36,6 +36,11 @@ function isToolCall(message: unknown): message is Record<string, unknown> {
   return (message as { method?: unknown } | null)?.method === 'tools/call';
 }
 
+// 요청에 담긴 tools/call의 툴 이름. 배치면 모두
+export function toolCallNames(body: unknown): string[] {
+  return (Array.isArray(body) ? body : [body]).filter(isToolCall).map(toolNameOf);
+}
+
 // 배치에 허용되지 않은 호출이 하나라도 있으면 배치 전체를 보내지 않는다.
 // 일부만 보내면 업스트림 응답 스트림에 거부 응답을 끼워 넣어야 해서다
 export function planInbound(body: unknown, allowedTools: readonly string[]): InboundPlan {

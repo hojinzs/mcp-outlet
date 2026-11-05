@@ -14,7 +14,8 @@ export type McpAccess =
   // 없는 엔드포인트와 다른 사람의 엔드포인트를 구분하지 않는다 (F-AUTH-05)
   | { kind: 'not_found' }
   | { kind: 'endpoint_disabled' }
-  | { kind: 'connector_disabled' };
+  // 감사 로그에 거부로 남기도록 대상을 함께 준다
+  | { kind: 'connector_disabled'; endpoint: EndpointRow; connector: ConnectorRow };
 
 export async function resolveMcpAccess(
   db: Db,
@@ -29,7 +30,9 @@ export async function resolveMcpAccess(
 
   const row = endpointId ? await findEndpointForMcp(db, endpointId) : undefined;
   if (!row || row.ownerSub !== claims.sub) return { kind: 'not_found' };
-  if (row.connector.disabledAt) return { kind: 'connector_disabled' };
+  if (row.connector.disabledAt) {
+    return { kind: 'connector_disabled', endpoint: row.endpoint, connector: row.connector };
+  }
   if (!row.endpoint.enabled) return { kind: 'endpoint_disabled' };
   return { kind: 'ok', endpoint: row.endpoint, connector: row.connector };
 }

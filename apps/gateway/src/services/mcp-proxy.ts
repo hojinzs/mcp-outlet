@@ -5,7 +5,12 @@ import { type ConnectorRow, setConnectorHealth } from '../db/queries/connectors.
 import { type EndpointRow, touchLastCalled } from '../db/queries/endpoints.ts';
 import { errorResponse, isRequest, type JsonRpcResponse, RPC_ERROR } from '../mcp/jsonrpc.ts';
 import { rewriteSse } from '../mcp/sse.ts';
-import { createResponseTap, planInbound, type ToolCallOutcome } from '../mcp/tool-policy.ts';
+import {
+  createResponseTap,
+  planInbound,
+  type ToolCallOutcome,
+  toolCallNames,
+} from '../mcp/tool-policy.ts';
 import { type Runtimes, runtimeFor } from '../runtimes/index.ts';
 import { UpstreamError, type UpstreamErrorKind } from '../upstream/safe-fetch.ts';
 import { loadCredentials } from './credentials.ts';
@@ -277,7 +282,28 @@ export function createMcpProxy(deps: McpProxyDeps) {
     return failureReply(request, 'upstream_error', endpoint.id);
   }
 
-  return { proxy };
+  // 사용 중지된 커넥터로 온 tools/call도 거부로 남긴다 (SCR-ADM-06 요약의 거부)
+  function recordDenied(
+    access: { endpoint: EndpointRow; connector: ConnectorRow },
+    body: McpRequestBody | undefined,
+  ): void {
+    const { endpoint, connector } = access;
+    for (const toolName of toolCallNames(body?.json)) {
+      background(
+        insertAuditLog(deps.db, {
+          userId: endpoint.ownerId,
+          endpointId: endpoint.id,
+          connectorId: connector.id,
+          toolName,
+          result: 'denied',
+          durationMs: 0,
+        }),
+        'audit_log',
+      );
+    }
+  }
+
+  return { proxy, recordDenied };
 }
 
 export type McpProxy = ReturnType<typeof createMcpProxy>;
