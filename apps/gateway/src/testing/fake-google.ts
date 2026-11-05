@@ -101,6 +101,8 @@ export async function createFakeGoogle(options: { now: () => Date }) {
         const { payload } = await jwtVerify(form.get('assertion') ?? '', publicKey, {
           issuer: FAKE_SERVICE_ACCOUNT_EMAIL,
           audience: TOKEN_URL,
+          // assertion은 테스트 시계로 서명되므로 같은 시계로 검사한다
+          currentDate: options.now(),
         });
         if (typeof payload.scope !== 'string' || !payload.scope.includes('analytics.readonly')) {
           return json({ error: 'invalid_scope' }, 400);
