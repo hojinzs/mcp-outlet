@@ -4,6 +4,9 @@ export type Role = 'user' | 'admin';
 
 export type Me = { id: string; email: string | null; role: Role; groups: string[] };
 
+// idpLogout: IdP가 end_session을 지원해 "다른 계정으로 로그인"을 쓸 수 있는지 (SCR-COM-03)
+export type AuthOptions = { idpLogout: boolean };
+
 export type ToolAnnotations = {
   title?: string;
   readOnlyHint?: boolean;

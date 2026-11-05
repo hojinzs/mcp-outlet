@@ -3,7 +3,7 @@ import { ChevronDownIcon, MenuIcon, XIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { toast } from 'sonner';
-import { meQuery } from '../api/queries.ts';
+import { authOptionsQuery, meQuery } from '../api/queries.ts';
 import type { Me } from '../api/types.ts';
 import { Loading } from '../components/loading.tsx';
 import { PageError } from '../components/page-error.tsx';
@@ -44,6 +44,8 @@ async function runLogout(idp: boolean) {
 }
 
 function AccountMenu({ me }: { me: Me }) {
+  // IdP 로그아웃을 지원하지 않으면 같은 계정으로 다시 로그인되므로 숨긴다 (SCR-COM-03 결정 사항)
+  const idpLogout = useQuery(authOptionsQuery).data?.idpLogout === true;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -59,7 +61,9 @@ function AccountMenu({ me }: { me: Me }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => runLogout(false)}>로그아웃</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => runLogout(true)}>다른 계정으로 로그인</DropdownMenuItem>
+        {idpLogout && (
+          <DropdownMenuItem onSelect={() => runLogout(true)}>다른 계정으로 로그인</DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

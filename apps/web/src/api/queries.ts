@@ -6,6 +6,7 @@ import type {
   AdminUser,
   AuditPage,
   AuditSummary,
+  AuthOptions,
   Builtin,
   BuiltinConnectorPatch,
   ConnectInfo,
@@ -29,6 +30,7 @@ import type {
 
 export const queryKeys = {
   me: ['me'] as const,
+  authOptions: ['auth-options'] as const,
   endpoints: ['endpoints'] as const,
   endpoint: (id: string) => ['endpoints', id] as const,
   calls: (id: string) => ['endpoints', id, 'calls'] as const,
@@ -49,6 +51,13 @@ export const meQuery = queryOptions({
   queryKey: queryKeys.me,
   queryFn: () => api<Me>('/api/me'),
   staleTime: 5 * 60_000,
+});
+
+// 세션 없이 받는다. IdP 설정은 실행 중에 바뀌지 않는다
+export const authOptionsQuery = queryOptions({
+  queryKey: queryKeys.authOptions,
+  queryFn: () => api<AuthOptions>('/auth/options'),
+  staleTime: Infinity,
 });
 
 export const endpointsQuery = queryOptions({

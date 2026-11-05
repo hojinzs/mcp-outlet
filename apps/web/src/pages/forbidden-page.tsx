@@ -1,5 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
+import { authOptionsQuery } from '../api/queries.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { AppLayout } from '../layouts/app-layout.tsx';
@@ -9,6 +11,7 @@ import { logout } from '../lib/session.ts';
 function NotMember({ email }: { email: string | null }) {
   const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(false);
+  const idpLogout = useQuery(authOptionsQuery).data?.idpLogout;
 
   // IdP 세션이 남아 있으면 같은 계정으로 다시 로그인되므로 IdP 로그아웃을 거친다
   async function switchAccount() {
@@ -34,9 +37,17 @@ function NotMember({ email }: { email: string | null }) {
             로그아웃하지 못했습니다. 다시 시도하세요.
           </p>
         )}
-        <Button onClick={switchAccount} disabled={pending} className="self-center">
-          다른 계정으로 로그인
-        </Button>
+        {/* IdP가 로그아웃(end_session)을 지원하지 않으면 같은 계정으로 다시 로그인되므로 버튼 대신 안내한다 */}
+        {idpLogout === true && (
+          <Button onClick={switchAccount} disabled={pending} className="self-center">
+            다른 계정으로 로그인
+          </Button>
+        )}
+        {idpLogout === false && (
+          <p className="text-sm text-muted-foreground">
+            다른 계정으로 로그인하려면 로그인 서비스(IdP)에서 직접 로그아웃한 뒤 다시 로그인하세요.
+          </p>
+        )}
       </Card>
     </main>
   );
