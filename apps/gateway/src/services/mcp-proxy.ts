@@ -179,9 +179,19 @@ export function createMcpProxy(deps: McpProxyDeps) {
       background(touchLastCalled(deps.db, ids, new Date(), LAST_CALLED_INTERVAL_MS), 'last_called');
     }
 
+    let health = connector.status;
     function markHealth(status: 'ok' | 'error'): void {
-      if (connector.status === status) return;
+      if (health === status) return;
+      health = status;
       background(setConnectorHealth(deps.db, connector.id, status), 'connector_health');
+    }
+
+    // builtin은 툴을 부를 때만 외부 API에 닿고, 실패도 HTTP 200의 툴 결과(isError)로 온다.
+    // 성공한 툴 결과가 있어야 정상으로 되돌린다
+    const builtin = connector.manifest.runtime === 'builtin';
+    function onToolCall(toolName: string, outcome: ToolCallOutcome): void {
+      recordToolCall(toolName, outcome);
+      if (builtin && outcome === 'ok') markHealth('ok');
     }
 
     let plan: ReturnType<typeof planInbound> = { kind: 'forward', toolCalls: new Map() };
@@ -203,7 +213,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
         : { status: 202, headers: {}, body: null };
     }
     if (plan.toolCalls.size > 0) touch();
-    const tap = createResponseTap(plan, endpoint.allowedTools, recordToolCall);
+    const tap = createResponseTap(plan, endpoint.allowedTools, onToolCall);
 
     let response: Response;
     try {
@@ -253,7 +263,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
       return failureReply(request, 'upstream_error', endpoint.id);
     }
 
-    markHealth('ok');
+    if (!builtin) markHealth('ok');
     // 세션 종료(DELETE)와 알림 수신(202)은 본문 없이 상태만 돌려준다
     if (!response.body || request.method === 'DELETE' || status === 202 || status === 204) {
       await response.body?.cancel();
