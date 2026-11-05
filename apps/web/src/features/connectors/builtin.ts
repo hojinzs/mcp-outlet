@@ -117,9 +117,10 @@ export function supportsServiceAccount(builtin: Builtin | undefined): boolean {
   return builtin?.authMethods.some((method) => method.type === 'service_account') ?? false;
 }
 
-// 정상(ok) 커넥터만 고를 수 있다. 연결 중·오류·재연결 필요는 상세에서 고친 뒤 쓴다 (SCR-EP-02 결정 사항)
+// 정상(ok) 커넥터만 고를 수 있다. 연결 중·오류·재연결 필요는 다시 연결·연결 테스트로 고친 뒤 쓴다
+// (SCR-EP-02 결정 사항)
 export function isPickable(connector: Connector): boolean {
-  return connector.disabledAt === null && connector.status === 'ok';
+  return unpickableReason(connector) === null;
 }
 
 export type UnpickableGuide = { reason: string; link: { to: string; label: string } | null };
@@ -130,23 +131,34 @@ const unpickableReasons: Record<Exclude<Connector['status'], 'ok'>, string> = {
   reauth_required: '계정 연결이 만료되었거나 취소되었습니다',
 };
 
+// 고를 수 없는 사유. 고를 수 있으면 null
+export function unpickableReason(connector: Connector): string | null {
+  if (connector.disabledAt !== null) return '관리자가 사용 중지한 커넥터입니다';
+  if (connector.status === 'ok') return null;
+  return unpickableReasons[connector.status];
+}
+
+// 엔드포인트 추가의 이어하기 화면. 정상이 아니면 다시 연결·연결 테스트부터, 정상이면 툴 선택으로 간다
+export function resumeLink(connectorId: string): string {
+  return `/endpoints/new?connector=${encodeURIComponent(connectorId)}`;
+}
+
 // 고를 수 없는 커넥터의 사유와 고칠 곳. 엔드포인트가 있으면 그 상세(재테스트·재연결)로,
-// 없으면 엔드포인트 목록의 "엔드포인트 없는 커넥터"로 보낸다 (SCR-EP-02, SCR-EP-01).
-// endpointIds(커넥터 id → 엔드포인트 하나)를 아직 받지 못했으면 링크를 그리지 않는다
+// 없으면 이어하기 화면으로 보낸다 (SCR-EP-02, SCR-EP-01).
+// endpointIds(커넥터 id → 엔드포인트 하나)를 아직 받지 못했으면 상세 링크를 그리지 않는다
 export function unpickableGuide(
   connector: Connector,
   endpointIds: ReadonlyMap<string, string> | undefined,
 ): UnpickableGuide | null {
-  if (connector.disabledAt !== null) {
-    return { reason: '관리자가 사용 중지한 커넥터입니다', link: null };
+  const reason = unpickableReason(connector);
+  if (reason === null) return null;
+  // 관리자 사용 중지는 사용자가 고칠 수 없다
+  if (connector.disabledAt !== null) return { reason, link: null };
+  if (connector.endpointCount === 0) {
+    return { reason, link: { to: resumeLink(connector.id), label: '다시 연결·연결 테스트' } };
   }
-  if (connector.status === 'ok') return null;
-  const reason = unpickableReasons[connector.status];
-  if (endpointIds === undefined) return { reason, link: null };
-  const endpointId = endpointIds.get(connector.id);
-  if (endpointId === undefined) {
-    return { reason, link: { to: '/', label: '엔드포인트 없는 커넥터에서 정리하기' } };
-  }
+  const endpointId = endpointIds?.get(connector.id);
+  if (endpointId === undefined) return { reason, link: null };
   const label =
     connector.status === 'reauth_required' ? '상세에서 다시 연결' : '상세에서 다시 테스트';
   return { reason, link: { to: `/endpoints/${encodeURIComponent(endpointId)}`, label } };

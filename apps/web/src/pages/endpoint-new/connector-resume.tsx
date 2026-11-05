@@ -4,13 +4,16 @@ import { OAuthAppGuide } from '../../components/builtin/oauth-app-guide.tsx';
 import { OAuthClientFields } from '../../components/builtin/oauth-client-fields.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Card, CardDescription, CardTitle } from '../../components/ui/card.tsx';
+import { unpickableReason } from '../../features/connectors/builtin.ts';
+import { connectorKindLabel } from '../../features/endpoints/connector-kind.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { TestBar, type TestState } from './connector-step.tsx';
 
 type OAuthMethod = Extract<BuiltinAuthMethod, { type: 'oauth2' }>;
 
-// SCR-EP-02 계정 연결 순서: 업스트림 동의에서 돌아온 "연결 중" 커넥터를 1단계의 연결 테스트부터 이어간다.
-// 동의를 취소했거나 실패했으면 같은 커넥터로 다시 연결하거나 OAuth 앱 정보를 다시 넣는다
+// SCR-EP-02 이어하기: 업스트림 동의에서 돌아온 커넥터나 정상이 아닌(연결 중·오류·재연결 필요) 커넥터를
+// 1단계의 연결 테스트부터 이어간다. 테스트에 성공하면 2단계로 간다.
+// 계정 연결 커넥터는 같은 커넥터로 다시 연결하거나 OAuth 앱 정보를 다시 넣을 수 있다
 export function ConnectorResume({
   connector,
   serviceName,
@@ -43,13 +46,20 @@ export function ConnectorResume({
   const canReconnect = connector.auth.type === 'oauth2' && oauthMethod !== undefined;
   const provider = oauthMethod?.provider ?? '';
   const account = connector.credential.account;
+  const reason = unpickableReason(connector);
 
   return (
     <Card>
       <div className="flex flex-col gap-1">
         <CardTitle>{connector.name}</CardTitle>
         <CardDescription>
-          {serviceName ?? '내장 서비스'}
+          {connectorKindLabel(connector.runtime, serviceName)}
+          {connector.url && (
+            <>
+              {' '}
+              · <span className="font-mono text-xs">{connector.url}</span>
+            </>
+          )}
           {account && (
             <>
               {' '}
@@ -59,16 +69,22 @@ export function ConnectorResume({
           )}
         </CardDescription>
       </div>
-      {notice && (
+      {notice ? (
         <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {notice}
         </p>
+      ) : (
+        reason && (
+          <p className="rounded-md bg-muted p-3 text-sm">
+            {reason}. {canReconnect ? '다시 연결하거나 ' : ''}연결 테스트를 다시 하세요.
+          </p>
+        )
       )}
       {canReconnect && (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-2">
             <Button
-              variant={notice ? 'default' : 'outline'}
+              variant={notice || connector.status === 'reauth_required' ? 'default' : 'outline'}
               onClick={() => onReconnect()}
               disabled={reconnecting}
             >

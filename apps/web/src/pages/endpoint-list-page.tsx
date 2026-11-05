@@ -12,7 +12,7 @@ import { StatusBadge } from '../components/status-badge.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
-import { builtinNameOf } from '../features/connectors/builtin.ts';
+import { builtinNameOf, unpickableGuide } from '../features/connectors/builtin.ts';
 import { orphanConnectors } from '../features/connectors/deletion.ts';
 import { connectorKindLabel } from '../features/endpoints/connector-kind.ts';
 import { type ReauthBanner, reauthBanners } from '../features/endpoints/status.ts';
@@ -131,24 +131,36 @@ function OrphanConnectors({
         </p>
       </div>
       <ul className="divide-y rounded-lg border bg-background text-sm">
-        {connectors.map((connector) => (
-          <li key={connector.id} className="flex items-center gap-3 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <div className="truncate">{connector.name}</div>
-              <div className="text-xs text-muted-foreground">
-                {connectorKindLabel(connector.runtime, builtinNameOf(builtins, connector.builtin))}
+        {connectors.map((connector) => {
+          // 정상이 아니면 엔드포인트 추가의 이어하기 화면에서 다시 연결·연결 테스트한다
+          const link = unpickableGuide(connector, undefined)?.link;
+          return (
+            <li key={connector.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate">{connector.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {connectorKindLabel(
+                    connector.runtime,
+                    builtinNameOf(builtins, connector.builtin),
+                  )}
+                </div>
               </div>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-destructive"
-              onClick={() => setDeleting(connector)}
-            >
-              삭제
-            </Button>
-          </li>
-        ))}
+              {link && (
+                <Button size="sm" variant="outline" asChild>
+                  <Link to={link.to}>{link.label}</Link>
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive"
+                onClick={() => setDeleting(connector)}
+              >
+                삭제
+              </Button>
+            </li>
+          );
+        })}
       </ul>
       {deleting && (
         <DeleteConnectorDialog

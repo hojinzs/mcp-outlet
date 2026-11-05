@@ -13,6 +13,7 @@ import {
   newEndpointReturnTo,
   oauthMethodOf,
   unpickableGuide,
+  unpickableReason,
   withoutConnectOutcome,
 } from './builtin.ts';
 
@@ -129,10 +130,12 @@ describe('내장 서비스 목록', () => {
     expect(isPickable({ ...connector, status: 'error' })).toBe(false);
     expect(isPickable({ ...connector, status: 'reauth_required' })).toBe(false);
     expect(isPickable({ ...connector, disabledAt: '2026-11-01T00:00:00Z' })).toBe(false);
+    expect(unpickableReason(connector)).toBeNull();
+    expect(unpickableReason({ ...connector, status: 'error' })).toContain('실패');
   });
 
   it('고를 수 없는 커넥터는 사유와 고칠 곳을 준다', () => {
-    const connector = { id: 'c1', disabledAt: null, status: 'ok' } as Connector;
+    const connector = { id: 'c1', disabledAt: null, status: 'ok', endpointCount: 1 } as Connector;
     const endpointIds = new Map([['c1', 'e1']]);
     expect(unpickableGuide(connector, endpointIds)).toBeNull();
     expect(unpickableGuide({ ...connector, status: 'error' }, endpointIds)?.link).toEqual({
@@ -145,11 +148,14 @@ describe('내장 서비스 목록', () => {
         label: '상세에서 다시 연결',
       },
     );
-    // 엔드포인트가 없으면 목록의 "엔드포인트 없는 커넥터"로
-    expect(
-      unpickableGuide({ ...connector, id: 'c2', status: 'pending' }, endpointIds)?.link?.to,
-    ).toBe('/');
-    // 엔드포인트 목록을 받기 전에는 링크를 그리지 않는다
+    // 엔드포인트가 없으면 이어하기 화면에서 다시 연결·연결 테스트한다. 엔드포인트 목록이 없어도 된다
+    for (const status of ['pending', 'error', 'reauth_required'] as const) {
+      expect(unpickableGuide({ ...connector, status, endpointCount: 0 }, undefined)?.link).toEqual({
+        to: '/endpoints/new?connector=c1',
+        label: '다시 연결·연결 테스트',
+      });
+    }
+    // 엔드포인트가 있는데 목록을 받기 전이면 링크를 그리지 않는다
     expect(unpickableGuide({ ...connector, status: 'error' }, undefined)).toEqual({
       reason: expect.any(String),
       link: null,

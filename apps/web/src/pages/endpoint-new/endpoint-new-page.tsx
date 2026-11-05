@@ -34,6 +34,7 @@ import {
   connectErrorMessages,
   connectOutcome,
   connectorTestMessage,
+  isPickable,
   newEndpointReturnTo,
   oauthMethodOf,
   withoutConnectOutcome,
@@ -74,7 +75,7 @@ type Prepared =
   | { kind: 'existing'; connector: Connector; tools: Tool[] }
   | { kind: 'new'; input: NewConnectorInput; tools: Tool[] };
 
-// 업스트림 동의에서 돌아왔거나 "연결 중" 커넥터로 들어온 경우 (?connector={id})
+// 업스트림 동의에서 돌아왔거나 정상이 아닌 커넥터로 들어온 경우 (?connector={id})
 type Resume = { connector: Connector; notice: string | null };
 
 const steps: { step: Step; label: string }[] = [
@@ -129,6 +130,7 @@ function unsavedTestErrorText(error: Error, input: NewConnectorInput): string {
 }
 
 function resumeTestState(
+  runtime: ConnectorRuntime,
   result: ConnectionTestResponse | undefined,
   error: Error | null,
 ): TestState {
@@ -136,7 +138,7 @@ function resumeTestState(
   if (!result) return { status: 'idle' };
   return result.result === 'ok'
     ? { status: 'ok', toolCount: result.tools.length }
-    : { status: 'failed', message: connectorTestMessage('builtin', result.result) };
+    : { status: 'failed', message: connectorTestMessage(runtime, result.result) };
 }
 
 export function EndpointNewPage() {
@@ -200,7 +202,7 @@ export function EndpointNewPage() {
     onError: (error, input) => setTestFailure(unsavedTestErrorText(error, input)),
   });
 
-  // 돌아온 "연결 중" 커넥터는 저장된 설정으로 테스트한다. 성공하면 상태가 ok가 되고 툴 캐시가 생긴다
+  // 이어가는 커넥터는 저장된 설정으로 테스트한다. 성공하면 상태가 ok가 되고 툴 캐시가 생긴다
   const resumeTest = useMutation({
     mutationFn: requests.retestConnector,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.connectors }),
@@ -272,28 +274,35 @@ export function EndpointNewPage() {
     }
   }
 
-  // ?connector={id}: 엔드포인트 상세의 "이 커넥터로 엔드포인트 하나 더"나 업스트림 동의 뒤 복귀.
-  // 복귀 결과(connected·connect_error)는 처음 한 번만 읽고 쿼리에서 지운다
+  // ?connector={id}: 엔드포인트 상세의 "이 커넥터로 엔드포인트 하나 더", 정상이 아닌 커넥터의
+  // "다시 연결·연결 테스트" 링크, 업스트림 동의 뒤 복귀. 같은 화면 안에서 id가 바뀌어도 다시 처리한다.
+  // 복귀 결과(connected·connect_error)는 처음 들어온 커넥터에만 쓰고 쿼리에서 지운다
   const presetId = params.get('connector');
   const [outcome] = useState<ConnectOutcome | null>(() => connectOutcome(params));
-  const presetHandled = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 목록을 받은 뒤 한 번만 처리한다
+  const handledPreset = useRef<string | null>(null);
+  const outcomeRead = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 목록을 받은 뒤 커넥터 id마다 한 번만 처리한다
   useEffect(() => {
-    if (!presetId || !connectors.data || presetHandled.current) return;
-    presetHandled.current = true;
-    if (outcome !== null) setParams(withoutConnectOutcome(params), { replace: true });
+    if (!presetId || !connectors.data || handledPreset.current === presetId) return;
+    handledPreset.current = presetId;
+    const returned = outcomeRead.current ? null : outcome;
+    outcomeRead.current = true;
+    if (returned !== null) setParams(withoutConnectOutcome(params), { replace: true });
     const connector = connectors.data.find((item) => item.id === presetId);
     if (!connector || connector.disabledAt !== null) return;
-    // 연결이 끝난 커넥터는 지금처럼 연결 테스트 없이 2단계로
-    if (connector.status !== 'pending' && outcome === null) {
+    // 정상 커넥터는 연결 테스트 없이 2단계로
+    if (isPickable(connector) && returned === null) {
       void pickExisting(connector);
       return;
     }
+    // 연결 중·오류·재연결 필요는 이어하기 화면에서 다시 연결·연결 테스트한다 (SCR-EP-02 결정 사항)
+    resumeTest.reset();
+    oauth.start.reset();
     setResume({
       connector,
-      notice: outcome === null || outcome === 'connected' ? null : connectErrorMessages[outcome],
+      notice: returned === null || returned === 'connected' ? null : connectErrorMessages[returned],
     });
-    if (outcome === 'connected') resumeTest.mutate(connector.id);
+    if (returned === 'connected') resumeTest.mutate(connector.id);
   }, [presetId, connectors.data]);
 
   function nextFromResume() {
@@ -324,6 +333,9 @@ export function EndpointNewPage() {
   }
 
   function startOver() {
+    // 같은 커넥터의 링크를 다시 누르면 이어하기 화면을 다시 연다
+    handledPreset.current = null;
+    setParams(new URLSearchParams(), { replace: true });
     setResume(null);
     resumeTest.reset();
     oauth.start.reset();
@@ -440,7 +452,7 @@ export function EndpointNewPage() {
           serviceName={resumeBuiltin?.name ?? null}
           oauthMethod={oauthMethodOf(resumeBuiltin)}
           notice={resume.notice}
-          test={resumeTestState(resumeTest.data, resumeTest.error)}
+          test={resumeTestState(resume.connector.runtime, resumeTest.data, resumeTest.error)}
           testing={resumeTest.isPending}
           onTest={() => resumeTest.mutate(resume.connector.id)}
           onNext={nextFromResume}

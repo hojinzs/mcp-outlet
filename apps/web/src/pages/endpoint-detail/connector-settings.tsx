@@ -15,6 +15,8 @@ import {
   connectErrorMessages,
   connectOutcome,
   connectorTestMessage,
+  resumeLink,
+  unpickableReason,
   withoutConnectOutcome,
 } from '../../features/connectors/builtin.ts';
 import { connectionTestMessage } from '../../features/connectors/remote-form.ts';
@@ -269,6 +271,7 @@ export function ConnectorSettings({
 
   const data = connector.data;
   const lastResult = data.lastTestResult;
+  const anotherBlocked = unpickableReason(data);
   return (
     <Card>
       <CardTitle>커넥터 설정</CardTitle>
@@ -304,9 +307,16 @@ export function ConnectorSettings({
               ? `성공 · ${formatDateTime(data.lastTestedAt)}`
               : `${connectorTestMessage(data.runtime, lastResult)} · ${formatDateTime(data.lastTestedAt)}`}
         </span>
-        <Button variant="link" asChild className="ml-auto px-0">
-          <Link to={`/endpoints/new?connector=${connectorId}`}>이 커넥터로 엔드포인트 하나 더</Link>
-        </Button>
+        {/* 정상 커넥터만 엔드포인트를 더 만들 수 있다 (SCR-EP-03, SCR-EP-02 결정 사항) */}
+        {anotherBlocked === null ? (
+          <Button variant="link" asChild className="ml-auto px-0">
+            <Link to={resumeLink(connectorId)}>이 커넥터로 엔드포인트 하나 더</Link>
+          </Button>
+        ) : (
+          <span className="ml-auto text-muted-foreground">
+            엔드포인트 하나 더: {anotherBlocked}
+          </span>
+        )}
       </div>
       <DeleteConnector connector={{ id: data.id, name: data.name }} onDeleting={onDeleting} />
     </Card>
