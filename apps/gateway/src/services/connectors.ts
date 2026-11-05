@@ -11,7 +11,12 @@ import {
   updateConnector,
 } from '../db/queries/connectors.ts';
 import { type Runtimes, runtimeFor } from '../runtimes/index.ts';
-import type { CachedTool, ConnectionTest, RuntimeConnector } from '../runtimes/types.ts';
+import type {
+  CachedTool,
+  ConnectionTest,
+  ConnectionTestResult,
+  RuntimeConnector,
+} from '../runtimes/types.ts';
 import {
   type BuiltinConnectorInput,
   type Builtins,
@@ -231,12 +236,30 @@ async function savedConnector(
   };
 }
 
+// 커넥터를 오류로 바꾸는 실패. 인증·연결 실패만 해당한다. 일시 장애(timeout·upstream_error)와
+// 자격증명은 유효한 권한 문제(permission_denied)는 상태를 두고 마지막 테스트 결과로만 보여준다
+// (F-CON-05 커넥터 오류 상태의 범위)
+const MARKS_ERROR: Record<Exclude<ConnectionTestResult, 'ok'>, boolean> = {
+  auth_failed: true,
+  unreachable: true,
+  not_mcp: true,
+  private_address: true,
+  redirect: true,
+  timeout: false,
+  upstream_error: false,
+  permission_denied: false,
+};
+
 // 연결 중(첫 연결 테스트 전) 커넥터는 테스트에 실패해도 연결 중으로 둔다.
 // 오류로 바꾸면 엔드포인트 없이 남아도 24시간 정리 대상에서 빠진다 (SCR-EP-02)
-function statusAfterTest(current: ConnectorRow['status'], test: ConnectionTest) {
+function statusAfterTest(
+  current: ConnectorRow['status'],
+  test: ConnectionTest,
+): ConnectorRow['status'] {
   if (test.result === 'ok') return 'ok';
   if (current === 'pending') return 'pending';
-  return test.reauthRequired ? 'reauth_required' : 'error';
+  if (test.reauthRequired) return 'reauth_required';
+  return MARKS_ERROR[test.result] ? 'error' : current;
 }
 
 // 저장된 설정으로 다시 테스트하고 상태·툴 캐시를 갱신한다 (F-CON-05)

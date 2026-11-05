@@ -9,6 +9,7 @@ import { MAX_TOOL_NAME_LENGTH } from '../mcp/limits.ts';
 import { MAX_DENIED_AUDIT_ROWS } from '../mcp/tool-policy.ts';
 import type { ConnectorRuntime } from '../runtimes/types.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
+import { UpstreamError } from '../upstream/safe-fetch.ts';
 import { createMcpProxy, type McpHttpRequest } from './mcp-proxy.ts';
 
 const KEY = Buffer.alloc(32, 7).toString('base64');
@@ -63,13 +64,14 @@ describe.skipIf(!testDatabaseUrl)('MCP 중계의 커넥터 상태 (DB)', () => {
     access: Awaited<ReturnType<typeof newBuiltinEndpoint>>,
     json: unknown,
     signal = new AbortController().signal,
+    upstreamTimeoutMs = 3000,
   ) {
     const proxy = createMcpProxy({
       db,
       secrets: createSecretBox({ current: KEY }),
       runtimes: { builtin: runtime },
       publicBaseUrl: 'https://outlet.test',
-      upstreamTimeoutMs: 3000,
+      upstreamTimeoutMs,
       log: { warn: () => {} },
     });
     const request: McpHttpRequest = {
@@ -113,6 +115,52 @@ describe.skipIf(!testDatabaseUrl)('MCP 중계의 커넥터 상태 (DB)', () => {
     const succeeded = runtimeReturning({ content: [{ type: 'text', text: '{}' }] });
     expect((await call(succeeded, access, toolCall)).status).toBe(200);
     await vi.waitFor(async () => expect(await statusOf(access.connector)).toBe('ok'));
+  });
+
+  function runtimeFailing(forward: ConnectorRuntime['forward']): ConnectorRuntime {
+    return { testConnection: async () => ({ result: 'ok', tools: [] }), forward };
+  }
+
+  it('MCP 호출 중 timeout·업스트림 5xx는 커넥터 상태를 바꾸지 않는다', async () => {
+    const access = await newBuiltinEndpoint('ok');
+    const timedOut = runtimeFailing(async () => {
+      throw new UpstreamError('timeout');
+    });
+    const serverError = runtimeFailing(async () => new Response('boom', { status: 503 }));
+    for (const runtime of [timedOut, serverError]) {
+      const res = await call(runtime, access, toolCall);
+      expect(JSON.parse(res.body as string).result.isError).toBe(true);
+    }
+    await vi.waitFor(async () => expect(await auditRows(access.endpoint.id)).toHaveLength(2));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await statusOf(access.connector)).toBe('ok');
+  });
+
+  it('JSON 본문을 받다 시간이 지나도 커넥터 상태를 바꾸지 않는다', async () => {
+    const access = await newBuiltinEndpoint('ok');
+    // 첫 조각만 보내고 끝내지 않는 본문
+    const stalled = runtimeFailing(async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"jsonrpc":'));
+        },
+      });
+      return new Response(body, { headers: { 'content-type': 'application/json' } });
+    });
+    const res = await call(stalled, access, toolCall, undefined, 50);
+    expect(JSON.parse(res.body as string).result.content[0].text).toContain('너무 늦습니다');
+    await vi.waitFor(async () => expect(await auditRows(access.endpoint.id)).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await statusOf(access.connector)).toBe('ok');
+  });
+
+  it('MCP 호출 중 연결 실패는 커넥터를 오류로 바꾼다', async () => {
+    const access = await newBuiltinEndpoint('ok');
+    const unreachable = runtimeFailing(async () => {
+      throw new UpstreamError('unreachable');
+    });
+    await call(unreachable, access, toolCall);
+    await vi.waitFor(async () => expect(await statusOf(access.connector)).toBe('error'));
   });
 
   async function auditRows(endpointId: string) {

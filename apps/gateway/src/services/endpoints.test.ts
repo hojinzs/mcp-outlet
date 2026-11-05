@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSecretBox } from '../crypto/secrets.ts';
 import { auditLogs, connectors, credentials, endpoints, users } from '../db/schema.ts';
 import { createRuntimes } from '../runtimes/index.ts';
+import type { ConnectionTestResult, ConnectorRuntime } from '../runtimes/types.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
 import {
   FAKE_UPSTREAM_TOKEN,
@@ -394,6 +395,58 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
       lastTestResult: 'ok',
       toolCount: 3,
     });
+  });
+
+  // 정해진 결과만 돌려주는 원격 런타임
+  function testing(result: Exclude<ConnectionTestResult, 'ok'>, clock: Date) {
+    const runtime: ConnectorRuntime = {
+      testConnection: async () => ({ result }),
+      forward: async () => new Response(null, { status: 500 }),
+    };
+    return deps({ runtimes: { remote: runtime }, now: () => clock });
+  }
+
+  it('재테스트가 timeout이면 상태를 그대로 두고 마지막 결과만 갱신한다', async () => {
+    const owner = await newUser();
+    const created = await createEndpoint(deps(), owner, {
+      name: 'a',
+      allowedTools: ['read_item'],
+      connector: remoteInput(),
+    });
+    const id = created.connector.id;
+    const first = new Date('2026-11-06T01:00:00Z');
+    expect(await retestConnector(testing('timeout', first), owner, id)).toEqual({
+      result: 'timeout',
+    });
+    expect(await getConnector(deps(), owner, id)).toMatchObject({
+      status: 'ok',
+      lastTestResult: 'timeout',
+      lastTestedAt: first,
+      toolCount: 3,
+    });
+
+    // 오류 상태에서도 일시 장애는 상태를 바꾸지 않는다
+    await retestConnector(testing('auth_failed', first), owner, id);
+    const second = new Date('2026-11-06T02:00:00Z');
+    await retestConnector(testing('upstream_error', second), owner, id);
+    expect(await getConnector(deps(), owner, id)).toMatchObject({
+      status: 'error',
+      lastTestResult: 'upstream_error',
+      lastTestedAt: second,
+    });
+  });
+
+  it('재테스트가 auth_failed·unreachable·not_mcp·redirect면 커넥터 오류가 된다', async () => {
+    const owner = await newUser();
+    for (const result of ['auth_failed', 'unreachable', 'not_mcp', 'redirect'] as const) {
+      const created = await createEndpoint(deps(), owner, {
+        name: result,
+        allowedTools: ['read_item'],
+        connector: remoteInput(),
+      });
+      await retestConnector(testing(result, new Date()), owner, created.connector.id);
+      expect((await getEndpoint(deps(), owner, created.id)).status).toBe('connector_error');
+    }
   });
 
   it('이전 키로 만든 자격증명은 읽을 때 현재 키로 다시 암호화한다', async () => {

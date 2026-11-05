@@ -61,7 +61,20 @@ const RESPONSE_HEADERS = ['content-type', 'mcp-session-id'];
 
 const LAST_CALLED_INTERVAL_MS = 60_000;
 
-// JSON 본문을 다 받지 못한 이유. 끊김·시간 초과는 연결 실패와 같게 다룬다
+// 커넥터를 오류로 바꾸는 실패. 인증·연결 실패만 해당하고 일시 장애(timeout·upstream_error)는
+// 상태를 두고 그 호출만 실패로 답한다 (F-CON-05 커넥터 오류 상태의 범위)
+const MARKS_ERROR: Record<FailureKind, boolean> = {
+  auth_failed: true,
+  reauth_required: true,
+  blocked_address: true,
+  insecure_scheme: true,
+  redirect: true,
+  unreachable: true,
+  timeout: false,
+  upstream_error: false,
+};
+
+// JSON 본문을 다 받지 못한 이유. 끊김은 연결 실패와 같게 다룬다
 const BODY_FAILURE = {
   too_large: 'upstream_error',
   timeout: 'timeout',
@@ -239,7 +252,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
       if (request.signal.aborted) return { status: 499, headers: {}, body: null };
       const kind = error instanceof UpstreamError ? error.kind : 'unreachable';
       deps.log.warn({ upstreamError: kind, endpointId: endpoint.id }, 'mcp upstream failed');
-      markHealth('error');
+      if (MARKS_ERROR[kind]) markHealth('error');
       return failureReply(request, kind, endpoint.id);
     }
 
@@ -293,7 +306,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
         if (request.signal.aborted) return { status: 499, headers: {}, body: null };
         deps.log.warn({ upstream: `response_${read.rejected}` }, 'upstream response rejected');
         const kind = BODY_FAILURE[read.rejected];
-        if (kind !== 'upstream_error') markHealth('error');
+        if (MARKS_ERROR[kind]) markHealth('error');
         return failureReply(request, kind, endpoint.id);
       }
       const text = read.text;
