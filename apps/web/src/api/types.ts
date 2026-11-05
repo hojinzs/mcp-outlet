@@ -52,7 +52,16 @@ export type EndpointSummary = {
   url: string;
   enabled: boolean;
   status: EndpointStatus;
-  connector: { id: string; name: string; runtime: ConnectorRuntime; url: string | null };
+  connector: {
+    id: string;
+    name: string;
+    runtime: ConnectorRuntime;
+    url: string | null;
+    // 내장 서비스 key. /api/builtins에서 서비스 이름을 찾는다
+    builtin: string | null;
+    // 관리자가 사용 중지한 사유 (status가 disabled일 때)
+    disabledReason: string | null;
+  };
   toolCounts: { allowed: number; total: number; new: number };
   lastCalledAt: string | null;
   createdAt: string;

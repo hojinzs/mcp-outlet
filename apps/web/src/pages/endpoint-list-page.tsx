@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { PlusIcon, TriangleAlertIcon } from 'lucide-react';
 import { Link } from 'react-router';
-import { endpointsQuery } from '../api/queries.ts';
-import type { EndpointSummary } from '../api/types.ts';
+import { builtinsQuery, endpointsQuery } from '../api/queries.ts';
+import type { Builtin, EndpointSummary } from '../api/types.ts';
 import { CopyButton } from '../components/copy-button.tsx';
 import { Loading } from '../components/loading.tsx';
 import { PageError } from '../components/page-error.tsx';
@@ -10,6 +10,7 @@ import { StatusBadge } from '../components/status-badge.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
+import { builtinNameOf } from '../features/connectors/builtin.ts';
 import { connectorKindLabel } from '../features/endpoints/connector-kind.ts';
 import { type ReauthBanner, reauthBanners } from '../features/endpoints/status.ts';
 
@@ -49,7 +50,13 @@ function Banner({ banner }: { banner: ReauthBanner }) {
   );
 }
 
-function EndpointRow({ endpoint }: { endpoint: EndpointSummary }) {
+function EndpointRow({
+  endpoint,
+  builtins,
+}: {
+  endpoint: EndpointSummary;
+  builtins: readonly Builtin[] | undefined;
+}) {
   const { toolCounts } = endpoint;
   return (
     <tr className="border-t align-middle">
@@ -61,7 +68,10 @@ function EndpointRow({ endpoint }: { endpoint: EndpointSummary }) {
       <td className="px-4 py-3">
         <div>{endpoint.connector.name}</div>
         <div className="text-xs text-muted-foreground">
-          {connectorKindLabel(endpoint.connector.runtime)}
+          {connectorKindLabel(
+            endpoint.connector.runtime,
+            builtinNameOf(builtins, endpoint.connector.builtin),
+          )}
         </div>
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
@@ -74,6 +84,12 @@ function EndpointRow({ endpoint }: { endpoint: EndpointSummary }) {
       </td>
       <td className="px-4 py-3">
         <StatusBadge status={endpoint.status} />
+        {/* 관리자가 적은 사용 중지 사유 (SCR-ADM-04 사용 중지) */}
+        {endpoint.status === 'disabled' && endpoint.connector.disabledReason && (
+          <p className="mt-1 max-w-48 text-xs text-muted-foreground">
+            사유: {endpoint.connector.disabledReason}
+          </p>
+        )}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
@@ -94,6 +110,9 @@ function EndpointRow({ endpoint }: { endpoint: EndpointSummary }) {
 
 export function EndpointListPage() {
   const endpoints = useQuery(endpointsQuery);
+  const hasBuiltin = endpoints.data?.some((endpoint) => endpoint.connector.builtin !== null);
+  // 내장 서비스 이름을 못 받으면 "내장 서비스"로 둔다
+  const builtins = useQuery({ ...builtinsQuery, enabled: hasBuiltin === true });
 
   if (endpoints.isPending) return <Loading />;
   if (endpoints.isError) {
@@ -139,7 +158,7 @@ export function EndpointListPage() {
             </thead>
             <tbody>
               {endpoints.data.map((endpoint) => (
-                <EndpointRow key={endpoint.id} endpoint={endpoint} />
+                <EndpointRow key={endpoint.id} endpoint={endpoint} builtins={builtins.data} />
               ))}
             </tbody>
           </table>

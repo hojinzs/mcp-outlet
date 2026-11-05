@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { builtinsQuery, connectorQuery, endpointQuery } from '../../api/queries.ts';
+import { builtinsQuery, endpointQuery } from '../../api/queries.ts';
 import type { EndpointDetail } from '../../api/types.ts';
 import { CopyButton } from '../../components/copy-button.tsx';
 import { LeaveGuard } from '../../components/leave-guard.tsx';
@@ -136,10 +136,8 @@ function EnabledSwitch({ endpoint }: { endpoint: EndpointDetail }) {
 export function EndpointDetailPage() {
   const { id = '' } = useParams();
   const endpoint = useQuery(endpointQuery(id));
-  // 커넥터 설정과 같은 캐시를 쓴다. 내장 서비스면 종류 칸에 서비스 이름을 보여준다
-  const connectorId = endpoint.data?.connector.id;
-  const connector = useQuery({ ...connectorQuery(connectorId ?? ''), enabled: !!connectorId });
-  const builtins = useQuery({ ...builtinsQuery, enabled: !!connector.data?.builtin });
+  // 내장 서비스면 종류 칸에 서비스 이름을 보여준다
+  const builtins = useQuery({ ...builtinsQuery, enabled: !!endpoint.data?.connector.builtin });
   const [draft, setDraft] = useState<Set<string> | null>(null);
   const [leaving, setLeaving] = useState(false);
 
@@ -175,6 +173,11 @@ export function EndpointDetailPage() {
           </Button>
         </div>
         {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
+        {data.status === 'disabled' && data.connector.disabledReason && (
+          <p className="text-sm text-muted-foreground">
+            사용 중지 사유: {data.connector.disabledReason}
+          </p>
+        )}
       </div>
 
       <Card>
@@ -192,7 +195,7 @@ export function EndpointDetailPage() {
               ·{' '}
               {connectorKindLabel(
                 data.connector.runtime,
-                builtinNameOf(builtins.data, connector.data?.builtin ?? null),
+                builtinNameOf(builtins.data, data.connector.builtin),
               )}
             </span>
           </dd>
