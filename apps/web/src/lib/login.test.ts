@@ -27,9 +27,7 @@ describe('returnTo', () => {
 
   it('로그인 시작 주소는 기본값으로 홈에 돌아온다', () => {
     expect(loginStartUrl(undefined)).toBe('/auth/login?returnTo=%2Fadmin%2F');
-    expect(loginStartUrl('/admin/x', 'login')).toBe(
-      '/auth/login?returnTo=%2Fadmin%2Fx&prompt=login',
-    );
+    expect(loginStartUrl('/admin/x')).toBe('/auth/login?returnTo=%2Fadmin%2Fx');
   });
 });
 

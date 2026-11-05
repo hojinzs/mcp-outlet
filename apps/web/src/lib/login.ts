@@ -17,9 +17,8 @@ export function loginPagePath(current: string): string {
 }
 
 // IdP 로그인을 시작하는 gateway 주소
-export function loginStartUrl(returnTo: string | undefined, prompt?: 'login'): string {
+export function loginStartUrl(returnTo: string | undefined): string {
   const params = new URLSearchParams({ returnTo: returnTo ?? HOME_PATH });
-  if (prompt) params.set('prompt', prompt);
   return `/auth/login?${params}`;
 }
 
