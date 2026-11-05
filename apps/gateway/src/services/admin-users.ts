@@ -45,7 +45,12 @@ export function maskRemoteUrl(value: string): string {
 type AdminConnectorRow = Awaited<ReturnType<typeof listConnectorsForAdmin>>[number];
 
 // 어디에 붙었는지까지만 보여준다. 자격증명, 연결된 계정, 툴 허용목록은 담지 않는다
-function adminConnectorView({ connector, endpointCount, disabledByEmail }: AdminConnectorRow) {
+function adminConnectorView({
+  connector,
+  endpointCount,
+  disabledByEmail,
+  disabledBySub,
+}: AdminConnectorRow) {
   const manifest = connector.manifest;
   return {
     id: connector.id,
@@ -58,7 +63,10 @@ function adminConnectorView({ connector, endpointCount, disabledByEmail }: Admin
       ? {
           at: connector.disabledAt,
           reason: connector.disabledReason,
-          by: connector.disabledBy ? { id: connector.disabledBy, email: disabledByEmail } : null,
+          // 이메일 클레임이 없는 관리자도 있어 sub를 함께 준다
+          by: connector.disabledBy
+            ? { id: connector.disabledBy, email: disabledByEmail, sub: disabledBySub }
+            : null,
         }
       : null,
     endpointCount,

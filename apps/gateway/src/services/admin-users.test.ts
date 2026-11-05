@@ -149,7 +149,7 @@ describe.skipIf(!testDatabaseUrl)('관리자 사용자·커넥터 서비스 (DB)
     expect(disabled.disabled).toEqual({
       at: now,
       reason: '외부 유출 의심',
-      by: { id: admin.id, email: admin.email },
+      by: { id: admin.id, email: admin.email, sub: admin.sub },
     });
     // 이미 중지된 커넥터를 다시 중지해도 사유·기록이 바뀌지 않는다
     await setConnectorDisabledByAdmin(deps, admin.id, connector.id, {

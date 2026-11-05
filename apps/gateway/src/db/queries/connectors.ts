@@ -126,6 +126,7 @@ export async function listConnectorsForAdmin(db: DbOrTx, ownerId: string) {
       connector: connectors,
       endpointCount: db.$count(endpoints, eq(endpoints.connectorId, connectors.id)),
       disabledByEmail: disabler.email,
+      disabledBySub: disabler.sub,
     })
     .from(connectors)
     .leftJoin(disabler, eq(disabler.id, connectors.disabledBy))
