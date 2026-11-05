@@ -294,6 +294,40 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     expect(row?.status).toBe('ok');
   });
 
+  it('재테스트가 permission_denied면 커넥터 상태를 두고 엔드포인트 상세에 마지막 결과를 준다', async () => {
+    const user = await createLoggedInUser(db, now());
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/endpoints',
+      cookies: user.cookies,
+      payload: {
+        name: 'GA',
+        allowedTools: ['ga4_run_report'],
+        connector: serviceAccountConnector(),
+      },
+    });
+    const endpoint = created.json();
+
+    google.setApiDenied(true);
+    const test = await app.inject({
+      method: 'POST',
+      url: `/api/connectors/${endpoint.connector.id}/test`,
+      cookies: user.cookies,
+    });
+    google.setApiDenied(false);
+    expect(test.json().result).toBe('permission_denied');
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/endpoints/${endpoint.id}`,
+      cookies: user.cookies,
+    });
+    expect(detail.json().status).toBe('active');
+    expect(detail.json().connector).toMatchObject({
+      lastTestResult: 'permission_denied',
+      lastTestedAt: expect.any(String),
+    });
+  });
+
   it('OAuth: 연결 중 저장 → 동의 → 콜백 → 연결 테스트 → 엔드포인트 → 갱신 실패 시 재연결 안내', async () => {
     const user = await createLoggedInUser(db, now());
     const connectorId = await pendingOAuthConnector(user);

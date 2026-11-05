@@ -424,6 +424,10 @@ describe.skipIf(!testDatabaseUrl)('커넥터·엔드포인트 서비스 (DB)', (
       lastTestedAt: first,
       toolCount: 3,
     });
+    // 엔드포인트 상세에도 마지막 테스트 결과가 실린다
+    const endpoint = await getEndpoint(deps(), owner, created.id);
+    expect(endpoint.status).toBe('active');
+    expect(endpoint.connector).toMatchObject({ lastTestResult: 'timeout', lastTestedAt: first });
 
     // 오류 상태에서도 일시 장애는 상태를 바꾸지 않는다
     await retestConnector(testing('auth_failed', first), owner, id);

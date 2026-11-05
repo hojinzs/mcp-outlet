@@ -80,6 +80,9 @@ function endpointSummary(
       builtin: manifest.runtime === 'builtin' ? manifest.builtin : null,
       // 관리자가 사용 중지했으면 사용자에게 사유를 보여준다 (SCR-ADM-04 사용 중지)
       disabledReason: connector.disabledReason,
+      // 상태를 바꾸지 않는 실패(timeout 등)도 보이게 마지막 연결 테스트 분류를 준다 (F-CON-05)
+      lastTestResult: connector.lastTestResult,
+      lastTestedAt: connector.lastTestedAt,
     },
     toolCounts: toolCounts(endpoint, connector),
     lastCalledAt: endpoint.lastCalledAt,
