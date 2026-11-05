@@ -7,7 +7,8 @@ import { type AddressPolicy, createAddressPolicy } from './address-policy.ts';
 // - DNS 해석 결과를 모두 검사하고, 검사한 그 주소로 연결한다(lookup 고정, DNS rebinding 방지)
 // - https만. UPSTREAM_ALLOW_CIDRS 대역으로만 해석되는 호스트는 http도 허용
 // - redirect는 따르지 않는다
-// - 응답 헤더까지 UPSTREAM_TIMEOUT_MS. 본문(SSE)은 길게 열려 있을 수 있어 호출자 abort로만 끊는다
+// - 응답 헤더까지 UPSTREAM_TIMEOUT_MS. 본문(SSE)은 길게 열려 있을 수 있어 호출자 abort로만 끊는다.
+//   JSON 본문의 완료 시간은 mcp/limits.ts readBoundedText가 따로 막는다
 
 export type UpstreamErrorKind =
   | 'blocked_address'

@@ -113,7 +113,11 @@ export async function buildApp(config: Config, db: Db, overrides: Partial<AppDep
   await registerMcpRoutes(app, {
     db,
     oidc,
-    proxy: createMcpProxy({ ...services, log: app.log }),
+    proxy: createMcpProxy({
+      ...services,
+      upstreamTimeoutMs: config.UPSTREAM_TIMEOUT_MS,
+      log: app.log,
+    }),
     policy: {
       groupsClaim: config.OIDC_GROUPS_CLAIM,
       loginGroups: config.OIDC_LOGIN_GROUPS,

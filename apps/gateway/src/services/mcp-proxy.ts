@@ -24,6 +24,8 @@ export type McpProxyDeps = {
   secrets: SecretBox;
   runtimes: Runtimes;
   publicBaseUrl: string;
+  // JSON 응답 본문을 다 받을 때까지의 상한. 응답 헤더 상한(safe-fetch)과 같은 UPSTREAM_TIMEOUT_MS
+  upstreamTimeoutMs: number;
   // 로그에는 분류값만 남긴다
   log: { warn: (fields: Record<string, unknown>, message: string) => void };
 };
@@ -266,12 +268,20 @@ export function createMcpProxy(deps: McpProxyDeps) {
       };
     }
     if (contentType.startsWith('application/json')) {
-      const text = await readBoundedText(response.body, MAX_UPSTREAM_MESSAGE_BYTES);
-      if (text === null) {
+      const read = await readBoundedText(response.body, {
+        maxBytes: MAX_UPSTREAM_MESSAGE_BYTES,
+        timeoutMs: deps.upstreamTimeoutMs,
+      });
+      if ('rejected' in read) {
         tap.settle();
-        deps.log.warn({ upstream: 'response_too_large' }, 'upstream response rejected');
-        return failureReply(request, 'upstream_error', endpoint.id);
+        deps.log.warn({ upstream: `response_${read.rejected}` }, 'upstream response rejected');
+        return failureReply(
+          request,
+          read.rejected === 'timeout' ? 'timeout' : 'upstream_error',
+          endpoint.id,
+        );
       }
+      const text = read.text;
       let body = text;
       try {
         body = JSON.stringify(tap.rewrite(JSON.parse(text)));
