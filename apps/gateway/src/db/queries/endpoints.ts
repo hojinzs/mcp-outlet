@@ -104,3 +104,12 @@ export async function touchLastCalled(
       ),
     );
 }
+
+// 감사 로그 필터의 엔드포인트 선택지 (SCR-ADM-06). 이름과 커넥터만
+export async function listEndpointNames(db: DbOrTx, ownerId: string) {
+  return db
+    .select({ id: endpoints.id, name: endpoints.name, connectorId: endpoints.connectorId })
+    .from(endpoints)
+    .where(eq(endpoints.ownerId, ownerId))
+    .orderBy(endpoints.name);
+}

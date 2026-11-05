@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray, lt, ne, notExists } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, notExists } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { DbOrTx } from '../client.ts';
-import { connectors, credentials, endpoints } from '../schema.ts';
+import { connectors, credentials, endpoints, users } from '../schema.ts';
 
 // 개인 커넥터 조회·변경. 모든 조회와 변경은 ownerId 조건을 함께 건다
 
@@ -115,4 +116,54 @@ export async function setConnectorHealth(
         ne(connectors.status, status),
       ),
     );
+}
+
+// 관리자 화면: 한 사용자의 커넥터와 사용 중지한 관리자 (SCR-ADM-04). 자격증명 테이블은 읽지 않는다
+export async function listConnectorsForAdmin(db: DbOrTx, ownerId: string) {
+  const disabler = alias(users, 'disabler');
+  return db
+    .select({
+      connector: connectors,
+      endpointCount: db.$count(endpoints, eq(endpoints.connectorId, connectors.id)),
+      disabledByEmail: disabler.email,
+    })
+    .from(connectors)
+    .leftJoin(disabler, eq(disabler.id, connectors.disabledBy))
+    .where(eq(connectors.ownerId, ownerId))
+    .orderBy(desc(connectors.updatedAt));
+}
+
+export async function findConnectorOwner(db: DbOrTx, id: string) {
+  const [row] = await db
+    .select({ id: connectors.id, ownerId: connectors.ownerId })
+    .from(connectors)
+    .where(eq(connectors.id, id));
+  return row;
+}
+
+export type ConnectorDisable = { disabledBy: string; disabledReason: string; disabledAt: Date };
+
+// 관리자 사용 중지·다시 사용. 이미 그 상태면 바꾸지 않고 false를 돌려준다.
+// 사용자 목록 정렬이 바뀌지 않게 updatedAt은 그대로 둔다
+export async function setConnectorDisabled(
+  db: DbOrTx,
+  id: string,
+  disable: ConnectorDisable | null,
+): Promise<boolean> {
+  const changed = await db
+    .update(connectors)
+    .set({
+      disabledAt: disable?.disabledAt ?? null,
+      disabledBy: disable?.disabledBy ?? null,
+      disabledReason: disable?.disabledReason ?? null,
+      updatedAt: connectors.updatedAt,
+    })
+    .where(
+      and(
+        eq(connectors.id, id),
+        disable ? isNull(connectors.disabledAt) : isNotNull(connectors.disabledAt),
+      ),
+    )
+    .returning({ id: connectors.id });
+  return changed.length > 0;
 }
