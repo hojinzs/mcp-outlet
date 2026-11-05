@@ -22,15 +22,23 @@ function ConnectorRow({
   const [open, setOpen] = useState(false);
   const status = adminConnectorStatus(connector);
   const { disabled } = connector;
+  const kind = connectorKindLabel(connector.runtime, builtinNameOf(builtins, connector.builtin));
   return (
     <tr className="border-t align-top">
-      <td className="px-3 py-2 font-medium">{connector.name}</td>
+      <td className="px-3 py-2 font-medium">
+        <span className="block max-w-48 truncate" title={connector.name}>
+          {connector.name}
+        </span>
+      </td>
+      {/* 내장 서비스 이름이 길어 표가 가로로 넘치지 않게 줄이고 전체 이름은 title로 */}
       <td className="px-3 py-2">
-        {connectorKindLabel(connector.runtime, builtinNameOf(builtins, connector.builtin))}
+        <span className="block max-w-32 truncate" title={kind}>
+          {kind}
+        </span>
       </td>
       <td className="px-3 py-2">
         {connector.url ? (
-          <code className="block max-w-64 truncate font-mono text-xs" title={connector.url}>
+          <code className="block max-w-56 truncate font-mono text-xs" title={connector.url}>
             {connector.url}
           </code>
         ) : (
@@ -44,8 +52,8 @@ function ConnectorRow({
       <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(connector.lastCalledAt)}</td>
       <td className="px-3 py-2">
         {disabled ? (
-          <div className="flex max-w-64 flex-col gap-1">
-            <p className="text-xs">사유: {disabled.reason ?? '-'}</p>
+          <div className="flex max-w-56 flex-col gap-1">
+            <p className="text-xs break-words">사유: {disabled.reason ?? '-'}</p>
             <p className="text-xs text-muted-foreground">
               {formatDateTime(disabled.at)} ·{' '}
               {disabled.by ? userLabel(disabled.by) : '지워진 관리자'}
