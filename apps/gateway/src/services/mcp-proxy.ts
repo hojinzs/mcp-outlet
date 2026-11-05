@@ -72,6 +72,7 @@ const LAST_CALLED_INTERVAL_MS = 60_000;
 const MARKS_ERROR: Record<FailureKind, boolean> = {
   auth_failed: true,
   reauth_required: true,
+  key_rejected: true,
   blocked_address: true,
   insecure_scheme: true,
   redirect: true,

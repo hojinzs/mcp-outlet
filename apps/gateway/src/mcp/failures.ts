@@ -3,7 +3,12 @@ import type { UpstreamErrorKind } from '../upstream/safe-fetch.ts';
 // 업스트림 실패를 클라이언트에 알리는 고정 문구 (F-RUN-03). 원격 프록시와 내장 런타임이 함께 쓴다.
 // 업스트림 원문은 넣지 않고, 사용자가 고칠 수 있는 문제면 관리 화면 링크를 붙인다
 
-export type FailureKind = UpstreamErrorKind | 'auth_failed' | 'reauth_required' | 'upstream_error';
+export type FailureKind =
+  | UpstreamErrorKind
+  | 'auth_failed'
+  | 'reauth_required'
+  | 'key_rejected'
+  | 'upstream_error';
 
 export function failureMessage(kind: FailureKind, adminUrl: string): string {
   const fix = `관리 화면에서 커넥터 설정을 확인하세요: ${adminUrl}`;
@@ -12,6 +17,8 @@ export function failureMessage(kind: FailureKind, adminUrl: string): string {
       return `커넥터가 업스트림 인증에 실패했습니다. ${fix}`;
     case 'reauth_required':
       return `커넥터의 계정 연결이 만료되었거나 취소되었습니다. 관리 화면에서 다시 연결하세요: ${adminUrl}`;
+    case 'key_rejected':
+      return `서비스 계정 키가 거부되었습니다. 관리 화면에서 키 파일을 교체하세요: ${adminUrl}`;
     case 'blocked_address':
     case 'insecure_scheme':
       return `커넥터 주소가 허용되지 않는 주소입니다. ${fix}`;

@@ -266,6 +266,66 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     expect(await waitForStatus('ok')).toBe('ok');
   });
 
+  it('서비스 계정 키가 거부되면 키 교체 안내 툴 결과로 답하고 커넥터를 재연결 필요가 아닌 오류로 둔다', async () => {
+    const user = await createLoggedInUser(db, now());
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/endpoints',
+      cookies: user.cookies,
+      payload: {
+        name: 'GA',
+        allowedTools: ['ga4_run_report'],
+        connector: serviceAccountConnector(),
+      },
+    });
+    const endpoint = created.json();
+    const statusOf = async () => {
+      const [row] = await db
+        .select({ status: connectors.status })
+        .from(connectors)
+        .where(eq(connectors.id, endpoint.connector.id));
+      return row?.status;
+    };
+
+    google.setServiceAccountKeyRevoked(true);
+    try {
+      const failed = await mcpCall(user, endpoint.id, runReport);
+      const result = failed.json().result;
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe(
+        `서비스 계정 키가 거부되었습니다. 관리 화면에서 키 파일을 교체하세요: https://outlet.test/admin/endpoints/${endpoint.id}`,
+      );
+      expect(await statusOf()).toBe('error');
+
+      // 재테스트도 인증 실패로 분류하고 재연결 필요로 두지 않는다
+      const test = await app.inject({
+        method: 'POST',
+        url: `/api/connectors/${endpoint.connector.id}/test`,
+        cookies: user.cookies,
+      });
+      expect(test.json().result).toBe('auth_failed');
+      const detail = await app.inject({
+        method: 'GET',
+        url: `/api/endpoints/${endpoint.id}`,
+        cookies: user.cookies,
+      });
+      expect(detail.json().status).toBe('connector_error');
+      expect(detail.json().connector.lastTestResult).toBe('auth_failed');
+    } finally {
+      google.setServiceAccountKeyRevoked(false);
+    }
+
+    // 키 파일을 교체하면(여기서는 같은 키를 되살림) 정상으로 돌아온다
+    const replaced = await app.inject({
+      method: 'PATCH',
+      url: `/api/connectors/${endpoint.connector.id}`,
+      cookies: user.cookies,
+      payload: { auth: { type: 'service_account', key: google.serviceAccountKey } },
+    });
+    expect(replaced.statusCode).toBe(200);
+    expect(await statusOf()).toBe('ok');
+  });
+
   it('툴 호출에서 Google이 권한 없음(403)을 주면 툴 결과로 알리고 커넥터는 정상으로 둔다', async () => {
     const user = await createLoggedInUser(db, now());
     const created = await app.inject({

@@ -4,8 +4,14 @@ import { z } from 'zod';
 // 내장 커넥터의 업스트림 토큰 엔드포인트 호출 (F-CON-03).
 // 주소는 내장 커넥터 정의에서만 온다. 응답 본문·원문 예외는 밖으로 내보내지 않는다
 
-// invalid_grant: refresh token이 만료·폐기됐거나 키가 지워짐 → 사용자가 다시 연결해야 한다
-export type TokenErrorKind = 'invalid_grant' | 'timeout' | 'unreachable' | 'token_error';
+// invalid_grant: refresh token이 만료·폐기됨 → 사용자가 다시 연결해야 한다
+// key_rejected: 서비스 계정 키가 지워졌거나 깨짐 → 키 파일을 바꿔야 한다(다시 연결할 것이 없다)
+export type TokenErrorKind =
+  | 'invalid_grant'
+  | 'key_rejected'
+  | 'timeout'
+  | 'unreachable'
+  | 'token_error';
 
 export class TokenError extends Error {
   readonly kind: TokenErrorKind;
@@ -141,12 +147,20 @@ export function createOAuth2Client(deps: OAuth2ClientDeps) {
           .sign(key);
       } catch {
         // 키 형식이 깨졌으면 키를 새로 넣어야 한다
-        throw new TokenError('invalid_grant');
+        throw new TokenError('key_rejected');
       }
-      return requestToken(tokenUrl, {
-        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        assertion,
-      });
+      try {
+        return await requestToken(tokenUrl, {
+          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          assertion,
+        });
+      } catch (error) {
+        // 서비스 계정 assertion 거부는 키를 지웠거나 계정이 사라진 경우다
+        if (error instanceof TokenError && error.kind === 'invalid_grant') {
+          throw new TokenError('key_rejected');
+        }
+        throw error;
+      }
     },
   };
 }

@@ -37,6 +37,7 @@ type Failure = Exclude<ConnectionTestResult, 'ok'>;
 
 const tokenFailure: Record<TokenErrorKind, Failure> = {
   invalid_grant: 'auth_failed',
+  key_rejected: 'auth_failed',
   token_error: 'auth_failed',
   timeout: 'timeout',
   unreachable: 'unreachable',
@@ -55,6 +56,7 @@ const apiFailure: Record<BuiltinErrorKind, Failure> = {
 
 const tokenToolFailure: Record<TokenErrorKind, FailureKind> = {
   invalid_grant: 'reauth_required',
+  key_rejected: 'key_rejected',
   token_error: 'auth_failed',
   timeout: 'timeout',
   unreachable: 'unreachable',

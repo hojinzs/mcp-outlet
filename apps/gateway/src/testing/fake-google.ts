@@ -37,6 +37,8 @@ export async function createFakeGoogle(options: { now: () => Date }) {
   let apiDenied = false;
   // 발급한 access token을 Google이 받아 주지 않는 상황(401). 예: 계정 비활성화
   let apiUnauthorized = false;
+  // 서비스 계정 키를 Google Cloud 콘솔에서 지운 상황(assertion이 invalid_grant)
+  let serviceAccountKeyRevoked = false;
 
   function issueRefresh(): string {
     const token = `1//${randomToken()}`;
@@ -101,6 +103,7 @@ export async function createFakeGoogle(options: { now: () => Date }) {
       return json(issueAccess());
     }
     if (grantType === 'urn:ietf:params:oauth:grant-type:jwt-bearer') {
+      if (serviceAccountKeyRevoked) return json({ error: 'invalid_grant' }, 400);
       try {
         const { payload } = await jwtVerify(form.get('assertion') ?? '', publicKey, {
           issuer: FAKE_SERVICE_ACCOUNT_EMAIL,
@@ -173,6 +176,9 @@ export async function createFakeGoogle(options: { now: () => Date }) {
     },
     setApiUnauthorized: (unauthorized: boolean) => {
       apiUnauthorized = unauthorized;
+    },
+    setServiceAccountKeyRevoked: (revoked: boolean) => {
+      serviceAccountKeyRevoked = revoked;
     },
   };
 }

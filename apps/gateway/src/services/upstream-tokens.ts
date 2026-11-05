@@ -1,7 +1,7 @@
 import type { BuiltinAuthMethod } from '@mcp-outlet/builtin-connectors';
 import type { SecretBox } from '../crypto/secrets.ts';
 import type { Db } from '../db/client.ts';
-import { markReauthRequired } from '../db/queries/connectors.ts';
+import { markReauthRequired, setConnectorHealth } from '../db/queries/connectors.ts';
 import { lockUserCredential, replaceCiphertext } from '../db/queries/credentials.ts';
 import type { RuntimeConnector } from '../runtimes/types.ts';
 import { type OAuth2Client, TokenError, type TokenResponse } from '../upstream/oauth2.ts';
@@ -15,7 +15,8 @@ import {
 import { type CredentialValues, openCredentials } from './credentials.ts';
 
 // 내장 커넥터의 업스트림 access token. 만료 전에 OAuth refresh·서비스 계정 assertion으로 새로 받고
-// 암호화된 자격증명에 다시 저장한다 (F-CON-03). 갱신이 거부되면 커넥터를 재연결 필요로 바꾼다 (F-RUN-03)
+// 암호화된 자격증명에 다시 저장한다 (F-CON-03). OAuth 갱신이 거부되면 커넥터를 재연결 필요로,
+// 서비스 계정 키가 거부되면 인증 실패(커넥터 오류)로 바꾼다 (F-RUN-03, F-CON-05 커넥터 오류 상태의 범위)
 
 export type UpstreamTokensDeps = {
   db: Db;
@@ -42,7 +43,7 @@ function issueToken(
 ): Promise<TokenResponse> {
   if (method.type === 'service_account') {
     const key = storedServiceAccountKey(values);
-    if (!key) throw new TokenError('invalid_grant');
+    if (!key) throw new TokenError('key_rejected');
     return oauth.serviceAccountToken(method.tokenUrl, { ...key, scopes: method.scopes });
   }
   const client = oauthClientOf(values);
@@ -88,6 +89,9 @@ export function createUpstreamTokens(deps: UpstreamTokensDeps) {
     } catch (error) {
       if (error instanceof TokenError && error.kind === 'invalid_grant') {
         await markReauthRequired(deps.db, ref.connectorId);
+      }
+      if (error instanceof TokenError && error.kind === 'key_rejected') {
+        await setConnectorHealth(deps.db, ref.connectorId, 'error');
       }
       throw error;
     }
