@@ -231,13 +231,21 @@ async function savedConnector(
   };
 }
 
+// 연결 중(첫 연결 테스트 전) 커넥터는 테스트에 실패해도 연결 중으로 둔다.
+// 오류로 바꾸면 엔드포인트 없이 남아도 24시간 정리 대상에서 빠진다 (SCR-EP-02)
+function statusAfterTest(current: ConnectorRow['status'], test: ConnectionTest) {
+  if (test.result === 'ok') return 'ok';
+  if (current === 'pending') return 'pending';
+  return test.reauthRequired ? 'reauth_required' : 'error';
+}
+
 // 저장된 설정으로 다시 테스트하고 상태·툴 캐시를 갱신한다 (F-CON-05)
 export async function retestConnector(deps: ConnectorServiceDeps, ownerId: string, id: string) {
   const { connector } = await requireConnector(deps.db, ownerId, id);
   const test = await testConnector(deps.runtimes, await savedConnector(deps, connector, ownerId));
   const now = deps.now();
   await updateConnector(deps.db, ownerId, id, {
-    status: test.result === 'ok' ? 'ok' : test.reauthRequired ? 'reauth_required' : 'error',
+    status: statusAfterTest(connector.status, test),
     lastTestedAt: now,
     lastTestResult: test.result,
     ...(test.result === 'ok' ? { toolsCache: test.tools, toolsCachedAt: now } : {}),

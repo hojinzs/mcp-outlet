@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.ts';
+import { deleteStalePendingConnectors } from '../db/queries/connectors.ts';
 import { auditLogs, connectors } from '../db/schema.ts';
 import { createLoggedInUser, TEST_GROUPS, testConfig } from '../testing/app.ts';
 import { testDatabaseUrl, useTestDb } from '../testing/db.ts';
@@ -335,6 +336,35 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     expect(denied.status).not.toBe('ok');
 
     expect(await reconnect()).toEqual({ location: '/admin/?connected=1', status: 'ok' });
+  });
+
+  it('OAuth 첫 연결 테스트가 실패해도 연결 중으로 남아 24시간 뒤 정리된다', async () => {
+    const user = await createLoggedInUser(db, now());
+    const connectorId = await pendingOAuthConnector(user);
+    const started = await startOAuth(user, connectorId, '/admin/');
+    await callback(user, started.cookie, {
+      code: google.consent(started.authorizationUrl.toString()),
+      state: started.authorizationUrl.searchParams.get('state') ?? '',
+    });
+    google.setApiDenied(true);
+    const test = await app.inject({
+      method: 'POST',
+      url: `/api/connectors/${connectorId}/test`,
+      cookies: user.cookies,
+    });
+    google.setApiDenied(false);
+    expect(test.json().result).not.toBe('ok');
+    const status = async () =>
+      (
+        await db
+          .select({ status: connectors.status, lastTestResult: connectors.lastTestResult })
+          .from(connectors)
+          .where(eq(connectors.id, connectorId))
+      )[0];
+    expect(await status()).toEqual({ status: 'pending', lastTestResult: test.json().result });
+
+    await deleteStalePendingConnectors(db, new Date(now().getTime() + 24 * 3600_000 + 1));
+    expect(await status()).toBeUndefined();
   });
 
   it('OAuth 콜백: 동의 취소, state 불일치, 다른 사용자 세션은 연결하지 않는다', async () => {
