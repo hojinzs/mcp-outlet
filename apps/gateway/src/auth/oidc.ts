@@ -210,7 +210,7 @@ export type OidcClient = ReturnType<typeof createOidcClient>;
 // typ·aud·nonce가 같고 scope·azp만 access token에 있다. scp는 배열로 주는 IdP용 (RFC 9068 scope, F-AUTH-03)
 function hasScope(payload: JWTPayload): boolean {
   const scope = payload.scope ?? payload.scp;
-  return (typeof scope === 'string' && scope !== '') || Array.isArray(scope);
+  return (typeof scope === 'string' && scope !== '') || (Array.isArray(scope) && scope.length > 0);
 }
 
 // RFC 6749 2.3.1: id·secret을 form-urlencode한 뒤 Basic으로 묶는다

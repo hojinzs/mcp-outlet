@@ -113,6 +113,10 @@ describe('OIDC client', () => {
     await expect(client.verifyAccessToken(scp, FAKE_CLIENT_ID)).resolves.toMatchObject({
       sub: 'u1',
     });
+    const emptyScp = await idp.signIdToken({ sub: 'u1', scp: [] });
+    await expect(client.verifyAccessToken(emptyScp, FAKE_CLIENT_ID)).rejects.toBeInstanceOf(
+      OidcError,
+    );
     await expect(client.issuer()).resolves.toBe('https://idp.test/app');
   });
 
