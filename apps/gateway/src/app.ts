@@ -29,12 +29,14 @@ import { createUpstreamTokens } from './services/upstream-tokens.ts';
 import { createOAuth2Client } from './upstream/oauth2.ts';
 import { createUpstreamFetch } from './upstream/safe-fetch.ts';
 
-// 테스트에서 IdP 통신, 내장 커넥터의 외부 API·토큰 호출, 시계를 바꿔 끼운다
+// 테스트에서 IdP 통신, 내장 커넥터의 외부 API·토큰 호출, 시계, 로그 출력을 바꿔 끼운다
 export type AppDeps = {
   fetch: typeof fetch;
   apiFetch: typeof fetch;
   builtins: Builtins;
   now: () => Date;
+  // 없으면 stdout. 로그에 비밀값이 새지 않는지 테스트가 받아 본다
+  logStream?: { write: (line: string) => void };
 };
 
 const defaultDeps: AppDeps = {
@@ -56,7 +58,11 @@ const logSerializers = {
 export async function buildApp(config: Config, db: Db, overrides: Partial<AppDeps> = {}) {
   const deps = { ...defaultDeps, ...overrides };
   const app = Fastify({
-    logger: { level: config.LOG_LEVEL, serializers: logSerializers },
+    logger: {
+      level: config.LOG_LEVEL,
+      serializers: logSerializers,
+      ...(deps.logStream ? { stream: deps.logStream } : {}),
+    },
     trustProxy: config.TRUST_PROXY,
     // MCP SSE 스트림은 오래 열려 있으므로 종료할 때 기다리지 않고 끊는다. 클라이언트가 다시 붙는다
     forceCloseConnections: true,
