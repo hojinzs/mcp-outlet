@@ -115,6 +115,8 @@ export function createBuiltinRuntime(deps: BuiltinRuntimeDeps): ConnectorRuntime
       { name: builtin.key, version: '1.0.0' },
       { capabilities: { tools: {} } },
     );
+    // 업스트림이 자격증명을 거부했으면 응답 대신 401을 돌려 호출하는 쪽이 커넥터를 오류로 바꾸게 한다
+    let credentialRejected = false;
     server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: builtin.listTools() }));
     server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
       let accessToken: string;
@@ -124,7 +126,12 @@ export function createBuiltinRuntime(deps: BuiltinRuntimeDeps): ConnectorRuntime
         return tokenErrorResult(error, request.adminUrl);
       }
       const ctx = callContext(accessToken, request.signal);
-      return builtin.callTool(params.name, params.arguments ?? {}, ctx);
+      try {
+        return await builtin.callTool(params.name, params.arguments ?? {}, ctx);
+      } catch (error) {
+        if (error instanceof BuiltinApiError) credentialRejected = true;
+        throw error;
+      }
     });
 
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -133,7 +140,7 @@ export function createBuiltinRuntime(deps: BuiltinRuntimeDeps): ConnectorRuntime
     });
     await server.connect(transport);
     try {
-      return await transport.handleRequest(
+      const response = await transport.handleRequest(
         new Request('http://builtin.invalid/mcp', {
           method: 'POST',
           headers: request.headers,
@@ -141,6 +148,9 @@ export function createBuiltinRuntime(deps: BuiltinRuntimeDeps): ConnectorRuntime
           signal: request.signal,
         }),
       );
+      if (!credentialRejected) return response;
+      await response.body?.cancel();
+      return new Response(null, { status: 401 });
     } finally {
       await server.close();
     }

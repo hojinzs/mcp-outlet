@@ -217,6 +217,50 @@ describe.skipIf(!testDatabaseUrl)('내장 커넥터 API·업스트림 OAuth·MCP
     return res.json().id as string;
   }
 
+  it('툴 호출에서 Google이 자격증명을 거부하면 MCP 오류로 답하고 커넥터를 오류로, 성공하면 정상으로 되돌린다', async () => {
+    const user = await createLoggedInUser(db, now());
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/endpoints',
+      cookies: user.cookies,
+      payload: {
+        name: 'GA',
+        allowedTools: ['ga4_run_report'],
+        connector: serviceAccountConnector(),
+      },
+    });
+    const endpoint = created.json();
+    // 상태는 응답 뒤에 기록된다
+    const waitForStatus = async (expected: string) => {
+      let status: string | undefined;
+      for (let i = 0; i < 50 && status !== expected; i += 1) {
+        const [row] = await db
+          .select({ status: connectors.status })
+          .from(connectors)
+          .where(eq(connectors.id, endpoint.connector.id));
+        status = row?.status;
+        if (status !== expected) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      return status;
+    };
+
+    google.setApiDenied(true);
+    const denied = await mcpCall(user, endpoint.id, runReport);
+    google.setApiDenied(false);
+    expect(denied.statusCode).toBe(200);
+    expect(denied.json().error.message).toContain(
+      `인증에 실패했습니다. 관리 화면에서 커넥터 설정을 확인하세요: https://outlet.test/admin/endpoints/${endpoint.id}`,
+    );
+    expect(await waitForStatus('error')).toBe('error');
+    expect(await waitForAudit(endpoint.id, 1)).toEqual([
+      { toolName: 'ga4_run_report', result: 'error' },
+    ]);
+
+    const ok = await mcpCall(user, endpoint.id, runReport);
+    expect(ok.json().result.isError).toBeUndefined();
+    expect(await waitForStatus('ok')).toBe('ok');
+  });
+
   it('OAuth: 연결 중 저장 → 동의 → 콜백 → 연결 테스트 → 엔드포인트 → 갱신 실패 시 재연결 안내', async () => {
     const user = await createLoggedInUser(db, now());
     const connectorId = await pendingOAuthConnector(user);

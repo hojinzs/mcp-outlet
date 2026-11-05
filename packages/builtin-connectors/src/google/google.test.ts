@@ -97,7 +97,7 @@ describe('Google Analytics 4 + Search Console 툴', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('Google 400은 인자 오류 설명만, 403은 고정 문구만 준다', async () => {
+  it('Google 400은 인자 오류 설명을 결과로 주고, 401·403은 분류값만 담아 던진다', async () => {
     const invalid = fakeGoogle(() =>
       json(
         {
@@ -130,9 +130,16 @@ describe('Google Analytics 4 + Search Console 툴', () => {
         403,
       ),
     );
-    const result = await googleAnalytics.callTool('gsc_list_sites', {}, denied.ctx);
-    expect(result.isError).toBe(true);
-    expect(textOf(result)).not.toContain('secret-detail');
+    const thrown = await googleAnalytics
+      .callTool('gsc_list_sites', {}, denied.ctx)
+      .catch((error: unknown) => error);
+    expect(thrown).toEqual(new BuiltinApiError('permission_denied'));
+    expect((thrown as Error).message).not.toContain('secret-detail');
+
+    const unauthorized = fakeGoogle(() => json({}, 401));
+    await expect(googleAnalytics.callTool('gsc_list_sites', {}, unauthorized.ctx)).rejects.toEqual(
+      new BuiltinApiError('auth_failed'),
+    );
   });
 
   it('타임아웃·연결 실패는 분류 문구로 바꾼다', async () => {

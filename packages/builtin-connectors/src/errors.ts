@@ -24,6 +24,11 @@ export class BuiltinApiError extends Error {
   }
 }
 
+// 업스트림이 자격증명을 거부한 경우(401·403). 툴 결과가 아니라 커넥터 오류로 다룬다
+export function isCredentialRejection(error: BuiltinApiError): boolean {
+  return error.kind === 'auth_failed' || error.kind === 'permission_denied';
+}
+
 const messages: Record<BuiltinErrorKind, string> = {
   auth_failed: '업스트림이 자격증명을 거부했습니다. 관리 화면에서 계정 연결을 확인하세요.',
   permission_denied:

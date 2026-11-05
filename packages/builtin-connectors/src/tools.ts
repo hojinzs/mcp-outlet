@@ -1,6 +1,12 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { apiErrorResult, BuiltinApiError, errorResult, jsonResult } from './errors.ts';
+import {
+  apiErrorResult,
+  BuiltinApiError,
+  errorResult,
+  isCredentialRejection,
+  jsonResult,
+} from './errors.ts';
 import type { BuiltinCallContext } from './types.ts';
 
 // 툴 하나: zod 입력 스키마가 MCP inputSchema와 인자 검증을 함께 맡는다
@@ -60,6 +66,8 @@ export function createToolSet(definitions: readonly ToolDefinition[]) {
     try {
       return jsonResult(await definition.run(parsed.data, ctx));
     } catch (error) {
+      // 자격증명 거부는 gateway가 커넥터 상태를 바꾸도록 던진다 (SCR-EP-01 상태 규칙)
+      if (error instanceof BuiltinApiError && isCredentialRejection(error)) throw error;
       // 분류하지 못한 예외도 원문을 내보내지 않는다 (F-RUN-03)
       return apiErrorResult(
         error instanceof BuiltinApiError ? error : new BuiltinApiError('upstream_error'),
