@@ -5,13 +5,13 @@ import { authOptionsQuery } from '../api/queries.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { AppLayout } from '../layouts/app-layout.tsx';
-import { logout } from '../lib/session.ts';
+import { accountSwitchMode, logout } from '../lib/session.ts';
 
 // SCR-COM-03 접근 거부. 그룹 이름 목록은 보여주지 않는다
 function NotMember({ email }: { email: string | null }) {
   const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(false);
-  const idpLogout = useQuery(authOptionsQuery).data?.idpLogout;
+  const switchMode = accountSwitchMode(useQuery(authOptionsQuery));
 
   // IdP 세션이 남아 있으면 같은 계정으로 다시 로그인되므로 IdP 로그아웃을 거친다
   async function switchAccount() {
@@ -38,12 +38,12 @@ function NotMember({ email }: { email: string | null }) {
           </p>
         )}
         {/* IdP가 로그아웃(end_session)을 지원하지 않으면 같은 계정으로 다시 로그인되므로 버튼 대신 안내한다 */}
-        {idpLogout === true && (
+        {switchMode === 'button' && (
           <Button onClick={switchAccount} disabled={pending} className="self-center">
             다른 계정으로 로그인
           </Button>
         )}
-        {idpLogout === false && (
+        {switchMode === 'notice' && (
           <p className="text-sm text-muted-foreground">
             다른 계정으로 로그인하려면 로그인 서비스(IdP)에서 직접 로그아웃한 뒤 다시 로그인하세요.
           </p>
