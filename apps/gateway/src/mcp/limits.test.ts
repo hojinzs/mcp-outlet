@@ -45,4 +45,17 @@ describe('readBoundedText', () => {
     expect(result).toEqual({ rejected: 'timeout' });
     expect(cancelled).toBe(true);
   });
+
+  it('본문을 읽다 업스트림이 끊기면 원문 예외 없이 aborted', async () => {
+    // 첫 조각 뒤 연결이 끊긴 본문
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"a":'));
+      },
+      pull(controller) {
+        controller.error(new Error('socket hang up: secret-token'));
+      },
+    });
+    expect(await readBoundedText(body, limits)).toEqual({ rejected: 'aborted' });
+  });
 });

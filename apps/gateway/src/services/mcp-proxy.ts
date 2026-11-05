@@ -4,10 +4,12 @@ import { insertAuditLog } from '../db/queries/audit-logs.ts';
 import { type ConnectorRow, setConnectorHealth } from '../db/queries/connectors.ts';
 import { type EndpointRow, touchLastCalled } from '../db/queries/endpoints.ts';
 import { errorResponse, isRequest, type JsonRpcResponse, RPC_ERROR } from '../mcp/jsonrpc.ts';
-import { MAX_UPSTREAM_MESSAGE_BYTES, readBoundedText } from '../mcp/limits.ts';
+import { type BoundedText, MAX_UPSTREAM_MESSAGE_BYTES, readBoundedText } from '../mcp/limits.ts';
 import { rewriteSse } from '../mcp/sse.ts';
 import {
+  auditToolName,
   createResponseTap,
+  deniedAuditNames,
   planInbound,
   type ToolCallOutcome,
   toolCallNames,
@@ -59,6 +61,13 @@ const RESPONSE_HEADERS = ['content-type', 'mcp-session-id'];
 const LAST_CALLED_INTERVAL_MS = 60_000;
 
 type FailureKind = UpstreamErrorKind | 'auth_failed' | 'upstream_error';
+
+// JSON 본문을 다 받지 못한 이유. 끊김·시간 초과는 연결 실패와 같게 다룬다
+const BODY_FAILURE = {
+  too_large: 'upstream_error',
+  timeout: 'timeout',
+  aborted: 'unreachable',
+} as const satisfies Record<Exclude<BoundedText, { text: string }>['rejected'], FailureKind>;
 
 function pickHeaders(
   source: (name: string) => string | string[] | null | undefined,
@@ -166,7 +175,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
           userId: endpoint.ownerId,
           endpointId: endpoint.id,
           connectorId: connector.id,
-          toolName,
+          toolName: auditToolName(toolName),
           result,
           durationMs,
         }),
@@ -180,10 +189,15 @@ export function createMcpProxy(deps: McpProxyDeps) {
     }
 
     let health = connector.status;
+    let healthWrite: Promise<unknown> = Promise.resolve();
     function markHealth(status: 'ok' | 'error'): void {
       if (health === status) return;
       health = status;
-      background(setConnectorHealth(deps.db, connector.id, status), 'connector_health');
+      // JSON 본문을 읽다 끊기면 한 요청에서 ok 다음 error를 쓴다. 순서가 뒤바뀌지 않게 이어 쓴다
+      healthWrite = healthWrite
+        .catch(() => {})
+        .then(() => setConnectorHealth(deps.db, connector.id, status));
+      background(healthWrite, 'connector_health');
     }
 
     // builtin은 툴을 부를 때만 외부 API에 닿고, 실패도 HTTP 200의 툴 결과(isError)로 온다.
@@ -206,7 +220,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
       forwardBody = JSON.stringify(request.body.json);
     }
     if (plan.kind === 'deny') {
-      for (const toolName of plan.deniedTools) recordToolCall(toolName, 'denied');
+      for (const toolName of deniedAuditNames(plan.deniedTools)) recordToolCall(toolName, 'denied');
       touch();
       return plan.response
         ? jsonReply(200, plan.response)
@@ -287,13 +301,13 @@ export function createMcpProxy(deps: McpProxyDeps) {
         timeoutMs: deps.upstreamTimeoutMs,
       });
       if ('rejected' in read) {
+        // 응답이 오지 않은 tools/call은 SSE가 중간에 끊긴 경우처럼 오류로 남긴다
         tap.settle();
+        if (request.signal.aborted) return { status: 499, headers: {}, body: null };
         deps.log.warn({ upstream: `response_${read.rejected}` }, 'upstream response rejected');
-        return failureReply(
-          request,
-          read.rejected === 'timeout' ? 'timeout' : 'upstream_error',
-          endpoint.id,
-        );
+        const kind = BODY_FAILURE[read.rejected];
+        if (kind !== 'upstream_error') markHealth('error');
+        return failureReply(request, kind, endpoint.id);
       }
       const text = read.text;
       let body = text;
@@ -317,7 +331,7 @@ export function createMcpProxy(deps: McpProxyDeps) {
     body: McpRequestBody | undefined,
   ): void {
     const { endpoint, connector } = access;
-    for (const toolName of toolCallNames(body?.json)) {
+    for (const toolName of deniedAuditNames(toolCallNames(body?.json))) {
       background(
         insertAuditLog(deps.db, {
           userId: endpoint.ownerId,

@@ -6,6 +6,7 @@ import {
   type JsonRpcResponse,
   RPC_ERROR,
 } from './jsonrpc.ts';
+import { MAX_TOOL_NAME_LENGTH } from './limits.ts';
 
 // 엔드포인트 허용목록 적용 (F-EP-02): 목록 밖 tools/call은 업스트림에 보내지 않고,
 // tools/list 응답에서는 목록 밖 툴을 뺀다. 런타임과 상관없이 메시지 단위로 동작한다.
@@ -40,6 +41,22 @@ function isToolCall(message: unknown): message is Record<string, unknown> {
 // 요청에 담긴 tools/call의 툴 이름. 배치면 모두
 export function toolCallNames(body: unknown): string[] {
   return (Array.isArray(body) ? body : [body]).filter(isToolCall).map(toolNameOf);
+}
+
+// 거부한 요청 하나에서 감사 로그로 남기는 툴 호출 수 상한. 배치에 툴 호출을 잔뜩 넣어
+// 감사 로그를 부풀리지 못하게 한다. 업스트림에 가지 않은 호출이라 일부만 남겨도 추적에 충분하다
+export const MAX_DENIED_AUDIT_ROWS = 20;
+
+// 감사 로그에 남길 거부된 툴 이름. 클라이언트가 보낸 값이라 개수와 길이를 자른다 (F-UI-03)
+export function deniedAuditNames(names: readonly string[]): string[] {
+  return names.slice(0, MAX_DENIED_AUDIT_ROWS).map(auditToolName);
+}
+
+// 허용목록 판정에는 쓰지 않는다. 자른 이름이 허용한 툴과 겹칠 수 있어서다
+export function auditToolName(name: string): string {
+  const cut = name.slice(0, MAX_TOOL_NAME_LENGTH);
+  // 서로게이트 쌍 가운데서 잘리면 깨진 글자가 남는다
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }
 
 // 배치에 허용되지 않은 호출이 하나라도 있으면 배치 전체를 보내지 않는다.

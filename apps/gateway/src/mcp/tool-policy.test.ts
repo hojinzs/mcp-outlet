@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createResponseTap, planInbound } from './tool-policy.ts';
+import { MAX_TOOL_NAME_LENGTH } from './limits.ts';
+import {
+  auditToolName,
+  createResponseTap,
+  deniedAuditNames,
+  MAX_DENIED_AUDIT_ROWS,
+  planInbound,
+} from './tool-policy.ts';
 
 const call = (id: number | string, name: string) => ({
   jsonrpc: '2.0',
@@ -115,5 +122,29 @@ describe('createResponseTap', () => {
     tap.rewrite([{ jsonrpc: '2.0', id: 'a', result: { content: [] } }]);
     tap.settle();
     expect(outcomes).toEqual(['ok']);
+  });
+});
+
+describe('deniedAuditNames', () => {
+  it('클라이언트가 보낸 긴 툴 이름은 입력 상한 길이로 자른다', () => {
+    expect(deniedAuditNames(['a'.repeat(5000)])).toEqual(['a'.repeat(MAX_TOOL_NAME_LENGTH)]);
+  });
+
+  it('서로게이트 쌍 가운데서 자르지 않는다', () => {
+    const name = `${'a'.repeat(MAX_TOOL_NAME_LENGTH - 1)}😀`;
+    expect(auditToolName(name)).toBe('a'.repeat(MAX_TOOL_NAME_LENGTH - 1));
+  });
+
+  it('요청 하나에서 남기는 거부 행 수를 제한한다', () => {
+    const names = Array.from({ length: 1000 }, (_, i) => `tool_${i}`);
+    const audited = deniedAuditNames(names);
+    expect(audited).toHaveLength(MAX_DENIED_AUDIT_ROWS);
+    expect(audited[0]).toBe('tool_0');
+  });
+
+  it('잘라도 허용목록 판정은 원래 이름으로 한다', () => {
+    const allowedName = 'a'.repeat(MAX_TOOL_NAME_LENGTH);
+    const plan = planInbound(call(1, `${allowedName}x`), [allowedName]);
+    expect(plan.kind).toBe('deny');
   });
 });

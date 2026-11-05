@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { HttpError } from '../http/errors.ts';
+import { MAX_TOOL_NAME_LENGTH } from '../mcp/limits.ts';
 
 // 커넥터·엔드포인트 API가 함께 쓰는 입력 검증 (SCR-EP-02·03 필드 규칙)
 
@@ -131,4 +132,4 @@ export function connectorPatch(allowHttp: boolean) {
   });
 }
 
-export const toolNameList = z.array(z.string().min(1).max(200)).min(1).max(1000);
+export const toolNameList = z.array(z.string().min(1).max(MAX_TOOL_NAME_LENGTH)).min(1).max(1000);
