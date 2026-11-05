@@ -20,6 +20,7 @@ import {
 import { connectionTestMessage } from '../../features/connectors/remote-form.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { BuiltinSettings } from './builtin-settings.tsx';
+import { ConnectorName } from './connector-name.tsx';
 
 // SCR-EP-03 커넥터 설정. 주소·토큰·서비스 계정 키를 바꾸면 gateway가 연결 테스트를 통과해야 저장한다
 
@@ -272,6 +273,7 @@ export function ConnectorSettings({
           이 커넥터를 쓰는 엔드포인트 {endpointCount}개에 함께 적용됩니다.
         </p>
       )}
+      <ConnectorName key={data.name} connector={data} onSaved={refresh} />
       {data.runtime === 'remote' ? (
         <RemoteForm key={data.updatedAt} connector={data} onSaved={refresh} />
       ) : (
