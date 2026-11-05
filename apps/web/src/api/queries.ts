@@ -1,11 +1,17 @@
-import { queryOptions } from '@tanstack/react-query';
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { api } from './client.ts';
 import type {
+  AdminConnector,
+  AdminEndpointOption,
+  AdminUser,
+  AuditPage,
+  AuditSummary,
   Builtin,
   BuiltinConnectorPatch,
   ConnectInfo,
   ConnectionTestResponse,
   Connector,
+  ConnectorDisableInput,
   CreateEndpointInput,
   EndpointDetail,
   EndpointPatch,
@@ -31,6 +37,12 @@ export const queryKeys = {
   connector: (id: string) => ['connectors', id] as const,
   connectorTools: (id: string) => ['connectors', id, 'tools'] as const,
   builtins: ['builtins'] as const,
+  admin: ['admin'] as const,
+  adminUsers: ['admin', 'users'] as const,
+  adminUserConnectors: (id: string) => ['admin', 'users', id, 'connectors'] as const,
+  adminUserEndpoints: (id: string) => ['admin', 'users', id, 'endpoints'] as const,
+  adminAudit: (query: string) => ['admin', 'audit', query] as const,
+  adminAuditSummary: (query: string) => ['admin', 'audit', 'summary', query] as const,
 };
 
 export const meQuery = queryOptions({
@@ -86,6 +98,47 @@ export const builtinsQuery = queryOptions({
   staleTime: Number.POSITIVE_INFINITY,
 });
 
+// 관리자 화면 (SCR-ADM-04·06). 사용자 목록은 한 번에 받는다
+export const adminUsersQuery = queryOptions({
+  queryKey: queryKeys.adminUsers,
+  queryFn: async () => (await api<{ users: AdminUser[] }>('/api/admin/users')).users,
+});
+
+export const adminUserConnectorsQuery = (userId: string) =>
+  queryOptions({
+    queryKey: queryKeys.adminUserConnectors(userId),
+    queryFn: async () =>
+      (await api<{ connectors: AdminConnector[] }>(`/api/admin/users/${userId}/connectors`))
+        .connectors,
+  });
+
+export const adminUserEndpointsQuery = (userId: string) =>
+  queryOptions({
+    queryKey: queryKeys.adminUserEndpoints(userId),
+    queryFn: async () =>
+      (await api<{ endpoints: AdminEndpointOption[] }>(`/api/admin/users/${userId}/endpoints`))
+        .endpoints,
+  });
+
+// query는 features/admin/audit-filter.ts가 만든 쿼리 문자열. 50건씩 커서로 이어 받는다
+export const adminAuditQuery = (query: string) =>
+  infiniteQueryOptions({
+    queryKey: queryKeys.adminAudit(query),
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams(query);
+      if (pageParam) params.set('cursor', pageParam);
+      return api<AuditPage>(`/api/admin/audit?${params}`);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
+  });
+
+export const adminAuditSummaryQuery = (query: string) =>
+  queryOptions({
+    queryKey: queryKeys.adminAuditSummary(query),
+    queryFn: () => api<AuditSummary>(`/api/admin/audit/summary?${query}`),
+  });
+
 export const requests = {
   logout: (idp: boolean) =>
     api<{ redirectTo: string }>(`/auth/logout${idp ? '?idp=true' : ''}`, { method: 'POST' }),
@@ -113,4 +166,7 @@ export const requests = {
     }),
   // 볼 때마다 gateway가 작업 기록을 남긴다 (SCR-EP-04)
   connectSecret: () => api<{ clientSecret: string }>('/api/connect-secret'),
+  // 사용 중지·다시 사용은 gateway가 작업 기록에 남긴다 (SCR-ADM-04)
+  setConnectorDisabled: (id: string, input: ConnectorDisableInput) =>
+    api<AdminConnector>(`/api/admin/connectors/${id}`, { method: 'PATCH', body: input }),
 };

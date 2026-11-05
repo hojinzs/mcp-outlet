@@ -185,3 +185,65 @@ export type CreateEndpointInput = { name: string; allowedTools: string[] } & (
   | { connectorId: string }
   | { connector: NewConnectorInput }
 );
+
+// 관리자 화면 (SCR-ADM-04·06). 자격증명·연결 계정은 관리자에게도 내려오지 않는다
+
+export type AdminUser = {
+  id: string;
+  sub: string;
+  email: string | null;
+  role: Role;
+  // 마지막 로그인·MCP 요청 때 받은 IdP 그룹
+  groups: string[];
+  lastLoginAt: string | null;
+  connectorCount: number;
+  disabledConnectorCount: number;
+  endpointCount: number;
+  lastCalledAt: string | null;
+};
+
+export type AdminConnector = {
+  id: string;
+  name: string;
+  runtime: ConnectorRuntime;
+  builtin: string | null;
+  // 쿼리 값과 사용자 정보는 gateway가 가려서 준다
+  url: string | null;
+  status: ConnectorStatus;
+  disabled: {
+    at: string;
+    reason: string | null;
+    // 중지한 관리자. 그 계정이 지워졌으면 null
+    by: { id: string; email: string | null } | null;
+  } | null;
+  endpointCount: number;
+  lastCalledAt: string | null;
+  createdAt: string;
+};
+
+export type AdminEndpointOption = { id: string; name: string; connectorId: string };
+
+export type ConnectorDisableInput = { disabled: true; reason: string } | { disabled: false };
+
+// 지워진 사용자·엔드포인트·커넥터는 null
+export type AuditEntry = {
+  id: number;
+  at: string;
+  user: { id: string; email: string | null; sub: string | null } | null;
+  endpoint: { id: string; name: string | null } | null;
+  connector: { id: string; name: string | null } | null;
+  toolName: string;
+  result: CallResult;
+  durationMs: number;
+};
+
+export type AuditPage = { entries: AuditEntry[]; nextCursor: string | null };
+
+export type AuditSummary = {
+  total: number;
+  errors: number;
+  denied: number;
+  durationMs: { p50: number | null; p95: number | null };
+  // 0이면 지우지 않는다
+  retentionDays: number;
+};

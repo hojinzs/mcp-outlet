@@ -20,8 +20,13 @@ import {
 import { logout } from '../lib/session.ts';
 import { cn } from '../lib/utils.ts';
 
-// SCR-COM-01 레이아웃. 아직 구현하지 않은 화면의 메뉴는 두지 않는다(관리 메뉴는 P1에서 admin에게만)
-const menu = [{ to: '/', label: '내 엔드포인트', matches: ['/', '/endpoints'] }];
+// SCR-COM-01 레이아웃. 아직 구현하지 않은 화면의 메뉴는 두지 않는다. 관리 메뉴는 admin에게만
+type MenuItem = { to: string; label: string; matches: string[] };
+
+const menu: MenuItem[] = [{ to: '/', label: '내 엔드포인트', matches: ['/', '/endpoints'] }];
+const adminMenu: MenuItem[] = [
+  { to: '/manage/users', label: '사용자', matches: ['/manage/users'] },
+];
 
 function isActive(pathname: string, matches: string[]): boolean {
   return matches.some((prefix) =>
@@ -59,12 +64,20 @@ function AccountMenu({ me }: { me: Me }) {
   );
 }
 
-function Navigation({ onNavigate }: { onNavigate?: () => void }) {
+function MenuGroup({
+  title,
+  items,
+  onNavigate,
+}: {
+  title: string;
+  items: MenuItem[];
+  onNavigate?: (() => void) | undefined;
+}) {
   const { pathname } = useLocation();
   return (
-    <nav aria-label="메뉴" className="flex flex-col gap-1">
-      <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">내 작업</p>
-      {menu.map((item) => (
+    <>
+      <p className="px-3 pt-3 pb-1 text-xs font-medium text-muted-foreground first:pt-0">{title}</p>
+      {items.map((item) => (
         <NavLink
           key={item.to}
           to={item.to}
@@ -77,6 +90,15 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
           {item.label}
         </NavLink>
       ))}
+    </>
+  );
+}
+
+function Navigation({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
+  return (
+    <nav aria-label="메뉴" className="flex flex-col gap-1">
+      <MenuGroup title="내 작업" items={menu} onNavigate={onNavigate} />
+      {me.role === 'admin' && <MenuGroup title="관리" items={adminMenu} onNavigate={onNavigate} />}
     </nav>
   );
 }
@@ -112,7 +134,7 @@ export function AppLayout({ children }: { children?: ReactNode }) {
             menuOpen ? 'fixed inset-x-0 top-14 z-30 block w-full border-b' : 'hidden',
           )}
         >
-          {me.data && <Navigation onNavigate={() => setMenuOpen(false)} />}
+          {me.data && <Navigation me={me.data} onNavigate={() => setMenuOpen(false)} />}
         </aside>
         <main className="min-w-0 flex-1 p-4 md:p-8">
           {me.isPending ? (
